@@ -23,13 +23,14 @@ const app = {
         this.render();
     },
 
-    addExpense(payer, amount, beneficiaries) {
+    addExpense(payer, amount, beneficiaries, description) {
         if (!payer || amount <= 0 || beneficiaries.length === 0) return;
         
         this.expenses.push({
             payer,
             amount: parseFloat(amount),
-            for: beneficiaries
+            for: beneficiaries,
+            description: description || 'No description'
         });
         this.render();
     },
@@ -103,12 +104,36 @@ const app = {
         return settlements;
     },
 
+    save() {
+        localStorage.setItem('ganan_people', JSON.stringify(this.people));
+        localStorage.setItem('ganan_expenses', JSON.stringify(this.expenses));
+    },
+
+    load() {
+        const savedPeople = localStorage.getItem('ganan_people');
+        const savedExpenses = localStorage.getItem('ganan_expenses');
+        
+        if (savedPeople) this.people = JSON.parse(savedPeople);
+        if (savedExpenses) this.expenses = JSON.parse(savedExpenses);
+    },
+
+    clearAll() {
+        if (confirm('Are you sure you want to clear all people and expenses? This cannot be undone.')) {
+            this.people = [];
+            this.expenses = [];
+            this.balances = {};
+            this.save();
+            this.render();
+        }
+    },
+
     render() {
         this.renderPeople();
         this.renderExpenseForm();
         this.renderExpenseList();
         this.renderBalances();
         this.renderSettlements();
+        this.save();
     },
 
     renderPeople() {
@@ -177,7 +202,7 @@ const app = {
             return;
         }
 
-        let html = '<table class="expense-table"><thead><tr><th>Payer</th><th>Amount</th><th>Beneficiaries</th><th>Action</th></tr></thead><tbody>';
+        let html = '<table class="expense-table"><thead><tr><th>Payer</th><th>Amount</th><th>Description</th><th>Beneficiaries</th><th>Action</th></tr></thead><tbody>';
 
         this.expenses.forEach((expense, idx) => {
             const beneficiaries = expense.for.join(', ');
@@ -185,6 +210,7 @@ const app = {
                 <tr>
                     <td>${this.escape(expense.payer)}</td>
                     <td>$${expense.amount.toFixed(2)}</td>
+                    <td>${this.escape(expense.description)}</td>
                     <td>${this.escape(beneficiaries)}</td>
                     <td><button class="btn-delete" data-idx="${idx}">Delete</button></td>
                 </tr>
@@ -273,6 +299,9 @@ const app = {
 // ========== EVENT HANDLERS ==========
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Load saved data
+    app.load();
+
     // Add Person
     document.getElementById('addPersonBtn').addEventListener('click', () => {
         const input = document.getElementById('personInput');
@@ -296,6 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const payer = document.getElementById('payerSelect').value;
         const amount = document.getElementById('amountInput').value;
+        const description = document.getElementById('descriptionInput').value;
 
         const beneficiaries = [];
         document.querySelectorAll('.beneficiary-checkbox:checked').forEach(checkbox => {
@@ -317,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        app.addExpense(payer, amount, beneficiaries);
+        app.addExpense(payer, amount, beneficiaries, description);
 
         // Reset form
         document.getElementById('expenseForm').reset();
@@ -329,4 +359,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial render
     app.render();
+
+    // Clear All button
+    const clearBtn = document.getElementById('clearAllBtn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            app.clearAll();
+        });
+    }
 });

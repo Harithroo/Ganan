@@ -142,6 +142,22 @@ button {
     background: #ee5a52;
 }
 
+.btn-clear {
+    padding: 8px 16px;
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.3s;
+    font-weight: 600;
+}
+
+.btn-clear:hover {
+    background: #c82333;
+}
+
 /* Lists */
 .list {
     list-style: none;
@@ -175,6 +191,18 @@ button {
     color: #333;
 }
 
+.form-group input[type="number"],
+.form-group select {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-family: inherit;
+    transition: border-color 0.3s;
+}
+
+.form-group input[type="text"],
 .form-group input[type="number"],
 .form-group select {
     width: 100%;
@@ -228,6 +256,7 @@ button {
     width: 100%;
     border-collapse: collapse;
     margin-top: 15px;
+    overflow-x: auto;
 }
 
 .expense-table thead {

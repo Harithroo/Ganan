@@ -15,6 +15,11 @@
         </header>
 
         <main>
+            <!-- Clear All Button -->
+            <div style="text-align: right; margin-bottom: 20px;">
+                <button id="clearAllBtn" class="btn-clear">Clear All Data</button>
+            </div>
+
             <!-- People Section -->
             <section class="section" id="peopleSection">
                 <h2>People</h2>
@@ -50,6 +55,16 @@
                             step="0.01"
                             min="0"
                             required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="descriptionInput">Description:</label>
+                        <input 
+                            type="text" 
+                            id="descriptionInput" 
+                            placeholder="e.g., Dinner, Movie tickets..."
+                            autocomplete="off"
                         >
                     </div>
 
