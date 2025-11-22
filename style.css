@@ -158,6 +158,22 @@ button {
     background: #c82333;
 }
 
+.btn-helper {
+    padding: 8px 12px;
+    background: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.3s;
+    font-weight: 600;
+}
+
+.btn-helper:hover {
+    background: #5a6268;
+}
+
 /* Lists */
 .list {
     list-style: none;
@@ -376,13 +392,53 @@ button {
         width: 100%;
     }
 
+    /* Convert table to cards on mobile */
     .expense-table {
         font-size: 0.9rem;
+        border-collapse: separate;
+        border-spacing: 0 10px;
     }
 
-    .expense-table th,
+    .expense-table thead {
+        display: none;
+    }
+
+    .expense-table tbody tr {
+        display: block;
+        background: #f8f9fa;
+        border-left: 4px solid #667eea;
+        border-radius: 6px;
+        padding: 12px;
+        margin-bottom: 10px;
+    }
+
     .expense-table td {
-        padding: 8px;
+        display: block;
+        padding: 8px 0;
+        border: none;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .expense-table td:last-child {
+        border-bottom: none;
+        padding-top: 12px;
+    }
+
+    .expense-table td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        display: inline-block;
+        width: 100px;
+        color: #667eea;
+    }
+
+    .expense-table td:last-child::before {
+        content: '';
+        display: none;
+    }
+
+    .expense-table .btn-delete {
+        width: 100%;
     }
 
     header h1 {
@@ -391,5 +447,9 @@ button {
 
     .section h2 {
         font-size: 1.2rem;
+    }
+
+    .btn-helper {
+        flex: 1;
     }
 }

@@ -210,11 +210,11 @@ const app = {
             const beneficiaries = expense.for.join(', ');
             html += `
                 <tr>
-                    <td>${this.escape(expense.payer)}</td>
-                    <td>$${expense.amount.toFixed(2)}</td>
-                    <td>${this.escape(expense.description)}</td>
-                    <td>${this.escape(beneficiaries)}</td>
-                    <td><button class="btn-delete" data-idx="${idx}">Delete</button></td>
+                    <td data-label="Payer:">${this.escape(expense.payer)}</td>
+                    <td data-label="Amount:">$${expense.amount.toFixed(2)}</td>
+                    <td data-label="Description:">${this.escape(expense.description)}</td>
+                    <td data-label="Beneficiaries:">${this.escape(beneficiaries)}</td>
+                    <td data-label=""><button class="btn-delete" data-idx="${idx}">Delete</button></td>
                 </tr>
             `;
         });
@@ -319,6 +319,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') {
             document.getElementById('addPersonBtn').click();
         }
+    });
+
+    // Select/Deselect All beneficiaries
+    document.getElementById('selectAllBtn').addEventListener('click', (e) => {
+        e.preventDefault();
+        document.querySelectorAll('.beneficiary-checkbox').forEach(checkbox => {
+            checkbox.checked = true;
+        });
+    });
+
+    document.getElementById('deselectAllBtn').addEventListener('click', (e) => {
+        e.preventDefault();
+        document.querySelectorAll('.beneficiary-checkbox').forEach(checkbox => {
+            checkbox.checked = false;
+        });
     });
 
     // Add Expense
