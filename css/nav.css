@@ -1,0 +1,114 @@
+/* Bottom Navigation Styles */
+.bottom-nav {
+    display: flex;
+    justify-content: space-around;
+    padding: 0.7rem 0.5rem 0.7rem 0.5rem;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--color-bg);
+    border-top: 1.5px solid var(--color-primary-light);
+    box-shadow: 0 -2px 12px 0 var(--color-shadow);
+    z-index: 100;
+    transition: background 0.3s, box-shadow 0.3s;
+}
+
+/* Navigation Button Styles */
+.bottom-nav .nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 0.93rem;
+    background: none;
+    border: none;
+    color: var(--color-text);
+    font-weight: 600;
+    padding: 0.3rem 0;
+    border-radius: 8px;
+    transition: color 0.2s, background 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+    position: relative;
+}
+
+/* Icon display using ::before pseudo-element */
+.bottom-nav .nav-btn::before {
+    content: '';
+    display: block;
+    width: 35px;
+    height: 35px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    transition: background-image 0.2s;
+}
+
+/* Icon URLs from CSS variables */
+.bottom-nav .nav-btn[data-icon="home"]::before {
+    background-image: var(--nav-icon-home);
+}
+
+.bottom-nav .nav-btn[data-icon="entries"]::before {
+    background-image: var(--nav-icon-entries);
+}
+
+.bottom-nav .nav-btn[data-icon="stats"]::before {
+    background-image: var(--nav-icon-stats);
+}
+
+.bottom-nav .nav-btn[data-icon="settings"]::before {
+    background-image: var(--nav-icon-settings);
+}
+
+.bottom-nav .nav-btn[data-icon="add"]::before {
+    background-image: var(--nav-icon-add);
+}
+
+.bottom-nav .nav-btn.add-btn {
+    position: absolute;
+    top: -40px;
+    width: 90px;
+    height: 98px;
+    max-width: 25%;
+}
+
+.bottom-nav .nav-btn.add-btn::before {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+}
+
+.bottom-nav .add-btn-placeholder {
+    visibility: hidden;
+}
+
+.bottom-nav .nav-btn.active {
+    color: var(--color-primary);
+    background: var(--color-scrollbar);
+}
+
+/* Switch to active icon on active state */
+.bottom-nav .nav-btn.active[data-icon="home"]::before {
+    background-image: var(--nav-icon-home-active);
+}
+
+.bottom-nav .nav-btn.active[data-icon="entries"]::before {
+    background-image: var(--nav-icon-entries-active);
+}
+
+.bottom-nav .nav-btn.active[data-icon="stats"]::before {
+    background-image: var(--nav-icon-stats-active);
+}
+
+.bottom-nav .nav-btn.active[data-icon="settings"]::before {
+    background-image: var(--nav-icon-settings-active);
+}
+
+.bottom-nav .nav-btn.active[data-icon="add"]::before {
+    background-image: var(--nav-icon-add-active);
+}
+
+.bottom-nav .nav-btn:active {
+    background: var(--color-primary-light);
+}

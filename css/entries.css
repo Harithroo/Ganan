@@ -1,0 +1,43 @@
+#entries {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+#entries li {
+    background: var(--color-card-bg);
+    margin-bottom: 1rem;
+    padding: 1.1rem 1rem 1rem 1rem;
+    border-radius: 14px;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    box-shadow: 0 2px 8px 0 var(--color-shadow);
+    border: 1px solid var(--color-scrollbar);
+    transition: box-shadow 0.2s, border 0.2s, background 0.3s;
+}
+
+#entries li:hover {
+    box-shadow: 0 4px 16px 0 var(--color-shadow-hover);
+    border-color: var(--color-primary-light);
+}
+
+#entries li .info span {
+    display: block;
+    font-size: 1.01rem;
+    margin-bottom: 0.2rem;
+}
+
+#entries li .controls .button.primary {
+    margin-left: 0.5rem;
+    background: var(--color-bg-page);
+    color: var(--color-primary);
+    border: 1px solid var(--color-primary);
+    box-shadow: none;
+    transition: background 0.2s, color 0.2s;
+}
+
+#entries li .controls .button.primary:hover {
+    background: var(--color-primary);
+    color: #fff;
+}

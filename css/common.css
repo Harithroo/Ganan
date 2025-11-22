@@ -1,0 +1,137 @@
+:root {
+    --color-white: #FFFFFF;
+    --color-black: #000000;
+    --color-bg: #FFFFFF;
+    --color-bg-invert: #000000;
+    --color-bg-gradient: linear-gradient(183.33deg, #FFFFFF 9.56%, #4E4E4E00 125.54%);
+    --color-card-bg: #FFFFFF;
+    --color-border: #5595FF;
+    --color-text: #4E4E4E;
+    --color-shadow: #5595FF;
+    --color-primary: #5595FF;
+    --nav-icon-home: url("../assets/icons/nav/home.svg");
+    --nav-icon-home-active: url("../assets/icons/nav/home-light-active.svg");
+    --nav-icon-entries: url("../assets/icons/nav/entries.svg");
+    --nav-icon-entries-active: url("../assets/icons/nav/entries-light-active.svg");
+    --nav-icon-add: url("../assets/icons/nav/add-light-active.svg");
+    --nav-icon-add-active: url("../assets/icons/nav/add-light-active.svg");
+    --nav-icon-stats: url("../assets/icons/nav/stats.svg");
+    --nav-icon-stats-active: url("../assets/icons/nav/stats-light-active.svg");
+    --nav-icon-settings: url("../assets/icons/nav/settings.svg");
+    --nav-icon-settings-active: url("../assets/icons/nav/settings-light-active.svg");
+}
+
+[data-theme="dark"] {
+    --color-black: #000000;
+    --color-white: #FFFFFF;
+    --color-bg: #000000;
+    --color-bg-invert: #FFFFFF;
+    --color-bg-gradient: linear-gradient(183.33deg, #000000 9.56%, #C6C6C600 125.54%);
+    --color-card-bg: #101820;
+    --color-border: #FAC638;
+    --color-text: #C6C6C6;
+    --color-shadow: #FAC638;
+    --color-primary: #FAC638;
+    --nav-icon-home: url("../assets/icons/nav/home.svg");
+    --nav-icon-home-active: url("../assets/icons/nav/home-dark-active.svg");
+    --nav-icon-entries: url("../assets/icons/nav/entries.svg");
+    --nav-icon-entries-active: url("../assets/icons/nav/entries-dark-active.svg");
+    --nav-icon-add: url("../assets/icons/nav/add-dark-active.svg");
+    --nav-icon-add-active: url("../assets/icons/nav/add-dark-active.svg");
+    --nav-icon-stats: url("../assets/icons/nav/stats.svg");
+    --nav-icon-stats-active: url("../assets/icons/nav/stats-dark-active.svg");
+    --nav-icon-settings: url("../assets/icons/nav/settings.svg");
+    --nav-icon-settings-active: url("../assets/icons/nav/settings-dark-active.svg");
+}
+
+html {
+    background: var(--color-bg-invert);
+}
+
+body {
+    font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+    background: var(--color-bg);
+    color: var(--color-text);
+    margin: 0;
+    font-size: 1.08rem;
+    min-height: 100vh;
+    transition: background 0.3s, color 0.3s;
+}
+
+.page {
+    display: none;
+    padding: 1rem 1rem 7rem 1rem;
+    /* max-width: 600px; */
+    margin: 0 auto;
+    transition: background 0.3s, box-shadow 0.3s;
+}
+
+.page.active {
+    display: block;
+    animation: fadeIn 0.4s;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* Header Title Styles */
+.header-title {
+    font-size: 2.1rem;
+    text-align: center;
+    font-weight: 800;
+    color: var(--color-primary);
+    margin-top: 0.7rem;
+    margin-bottom: 0.7rem;
+}
+
+/* Button Styles */
+input,
+select,
+.button.primary {
+    font-size: 1rem;
+    padding: 0.6rem 0.9rem;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    transition: border 0.2s, box-shadow 0.2s, background 0.3s, color 0.3s;
+    background: var(--color-card-bg);
+    color: var(--color-text);
+}
+
+input:focus,
+select:focus {
+    border-color: var(--color-primary);
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-bg-invert);
+}
+
+.button.primary {
+    width: 100%;
+    background: var(--color-primary);
+    color:  var(--color-bg);
+    border: 1px solid var(--color-primary);
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+}
+
+.button.primary:hover,
+.button.primary:focus {
+    border: 1px solid var(--color-bg-invert);
+    box-shadow: 0 4px 16px 0 var(--color-bg-invert);
+    transform: translateY(-2px) scale(1.03);
+}
+
+.button.primary:active {
+    border: 1px solid var(--color-bg-invert);
+    box-shadow: 0 4px 16px 0 var(--color-bg-invert);
+    transform: scale(0.98);
+}

@@ -1,0 +1,28 @@
+#entryForm {
+    display: grid;
+    gap: 1.1rem;
+    padding: 1.5rem 1rem;
+    border-radius: 14px;
+    border: 1px solid var(--color-border);
+}
+
+#entryForm label {
+    display: flex;
+    flex-direction: column;
+    font-weight: 500;
+    color: var(--color-text);
+    gap: 0.3rem;
+}
+
+#entryForm input,
+#entryForm select {
+    margin-top: 0.2rem;
+}
+
+#entryForm #submitBtn {
+    width: 100%;
+    align-self: end;
+    margin-top: 0.5rem;
+    padding: 0.7rem 1.5rem;
+    font-size: 1.08rem;
+}

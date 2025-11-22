@@ -1,0 +1,40 @@
+<section id="page-entryform" class="page">
+    <h2>Add Entry</h2>
+    <form id="entryForm">
+        <label>Date & Time: <input type="datetime-local" id="datetime" required></label>
+        <label>Account:
+            <select id="account">
+                <option value="Wallet">Wallet</option>
+                <option value="Bank - Frimi">Bank - Frimi</option>
+                <option value="Bank - NSB">Bank - NSB</option>
+                <option value="Bank - Commercial">Bank - Commercial</option>
+            </select>
+        </label>
+        <label>Category:
+            <select id="category">
+                <option value="Prior savings">Prior savings</option>
+                <option value="Expenses">Expenses</option>
+                <option value="Banking">Banking</option>
+            </select>
+        </label>
+        <label>Subcategory:
+            <input type="text" id="subcategory">
+        </label>
+        <label>Note:
+            <input type="text" id="note">
+        </label>
+        <label>Description:
+            <input type="text" id="description">
+        </label>
+        <label>Type:
+            <select id="type">
+                <option value="Income">Income</option>
+                <option value="Expense">Expense</option>
+            </select>
+        </label>
+        <label>Amount (LKR):
+            <input type="number" id="amount" step="0.01" required>
+        </label>
+        <button type="submit" class="button primary" id="submitBtn">Add</button>
+    </form>
+</section>

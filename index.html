@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Group Expense Splitter - Ganan</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Ganan</h1>
+            <p class="subtitle">Group Expense Splitter</p>
+        </header>
+
+        <main>
+            <!-- People Section -->
+            <section class="section" id="peopleSection">
+                <h2>People</h2>
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="personInput" 
+                        placeholder="Enter person name"
+                        autocomplete="off"
+                    >
+                    <button id="addPersonBtn">Add</button>
+                </div>
+                <ul id="peopleList" class="list"></ul>
+            </section>
+
+            <!-- Add Expense Section -->
+            <section class="section" id="expenseFormSection">
+                <h2>Add Expense</h2>
+                <form id="expenseForm">
+                    <div class="form-group">
+                        <label for="payerSelect">Payer:</label>
+                        <select id="payerSelect" required>
+                            <option value="">Select person</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="amountInput">Amount:</label>
+                        <input 
+                            type="number" 
+                            id="amountInput" 
+                            placeholder="0.00" 
+                            step="0.01"
+                            min="0"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label>Beneficiaries:</label>
+                        <div id="beneficiariesContainer" class="checkbox-group"></div>
+                    </div>
+
+                    <button type="submit" class="btn-primary">Add Expense</button>
+                </form>
+            </section>
+
+            <!-- Expense List Section -->
+            <section class="section" id="expenseListSection">
+                <h2>Expenses</h2>
+                <div id="expenseListContainer">
+                    <p class="empty-message">No expenses yet</p>
+                </div>
+            </section>
+
+            <!-- Balances Section -->
+            <section class="section" id="balancesSection">
+                <h2>Balances</h2>
+                <div id="balancesContainer">
+                    <p class="empty-message">No balances yet</p>
+                </div>
+            </section>
+
+            <!-- Settlements Section -->
+            <section class="section" id="settlementsSection">
+                <h2>Settlements</h2>
+                <div id="settlementsContainer">
+                    <p class="empty-message">No settlements needed</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Main App Script -->
+    <script src="app.js"></script>
+</body>
+</html>
