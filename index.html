@@ -3,108 +3,126 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Group Expense Splitter - Ganan</title>
+    <title>Ganan - Group Expense Splitter</title>
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-items">
+            <button class="nav-brand nav-btn" onclick="showPage('home')">Ganan</button>
+            <button class="nav-btn" onclick="showPage('people')">People</button>
+            <button class="nav-btn" onclick="showPage('add-expense')">Add Expense</button>
+            <button class="nav-btn" onclick="showPage('expenses')">Expenses</button>
+            <button class="nav-btn" onclick="showPage('balances')">Balances</button>
+            <button class="nav-btn" onclick="showPage('settlements')">Settlements</button>
+        </div>
+    </nav>
+
     <div class="container">
-        <header>
+        <!-- Home Page -->
+        <section id="home" class="page active">
             <h1>Ganan</h1>
             <p class="subtitle">Group Expense Splitter</p>
-        </header>
-
-        <main>
-            <!-- Clear All Button -->
-            <div style="text-align: right; margin-bottom: 20px;">
-                <button id="clearAllBtn" class="btn-clear">Clear All Data</button>
+            <p class="welcome-text">Split group expenses fairly and get optimal settlement instructions.</p>
+            
+            <div class="home-buttons">
+                <button class="btn-home" onclick="showPage('people')">Manage People</button>
+                <button class="btn-home" onclick="showPage('add-expense')">Add Expense</button>
+                <button class="btn-home" onclick="showPage('expenses')">View Expenses</button>
+                <button class="btn-home" onclick="showPage('settlements')">Get Settlements</button>
             </div>
 
-            <!-- People Section -->
-            <section class="section" id="peopleSection">
-                <h2>People</h2>
-                <div class="input-group">
+            <div class="home-footer">
+                <button id="clearAllBtn" class="btn-clear">Clear All Data</button>
+            </div>
+        </section>
+
+        <!-- People Page -->
+        <section id="people" class="page">
+            <h2>Manage People</h2>
+            <div class="input-group">
+                <input 
+                    type="text" 
+                    id="personInput" 
+                    placeholder="Enter person name"
+                    autocomplete="off"
+                >
+                <button id="addPersonBtn">Add Person</button>
+            </div>
+            <ul id="peopleList" class="list"></ul>
+        </section>
+
+        <!-- Add Expense Page -->
+        <section id="add-expense" class="page">
+            <h2>Add Expense</h2>
+            <form id="expenseForm">
+                <div class="form-group">
+                    <label for="payerSelect">Payer:</label>
+                    <select id="payerSelect" required>
+                        <option value="">Select person</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="amountInput">Amount:</label>
+                    <input 
+                        type="number" 
+                        id="amountInput" 
+                        placeholder="0.00" 
+                        step="0.01"
+                        min="0"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="descriptionInput">Description:</label>
                     <input 
                         type="text" 
-                        id="personInput" 
-                        placeholder="Enter person name"
+                        id="descriptionInput" 
+                        placeholder="e.g., Dinner, Movie tickets..."
                         autocomplete="off"
                     >
-                    <button id="addPersonBtn">Add</button>
                 </div>
-                <ul id="peopleList" class="list"></ul>
-            </section>
 
-            <!-- Add Expense Section -->
-            <section class="section" id="expenseFormSection">
-                <h2>Add Expense</h2>
-                <form id="expenseForm">
-                    <div class="form-group">
-                        <label for="payerSelect">Payer:</label>
-                        <select id="payerSelect" required>
-                            <option value="">Select person</option>
-                        </select>
+                <div class="form-group">
+                    <label>Beneficiaries:</label>
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <button type="button" id="selectAllBtn" class="btn-helper">Select All</button>
+                        <button type="button" id="deselectAllBtn" class="btn-helper">Deselect All</button>
                     </div>
-
-                    <div class="form-group">
-                        <label for="amountInput">Amount:</label>
-                        <input 
-                            type="number" 
-                            id="amountInput" 
-                            placeholder="0.00" 
-                            step="0.01"
-                            min="0"
-                            required
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label for="descriptionInput">Description:</label>
-                        <input 
-                            type="text" 
-                            id="descriptionInput" 
-                            placeholder="e.g., Dinner, Movie tickets..."
-                            autocomplete="off"
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label>Beneficiaries:</label>
-                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                            <button type="button" id="selectAllBtn" class="btn-helper">Select All</button>
-                            <button type="button" id="deselectAllBtn" class="btn-helper">Deselect All</button>
-                        </div>
-                        <div id="beneficiariesContainer" class="checkbox-group"></div>
-                    </div>
-
-                    <button type="submit" class="btn-primary">Add Expense</button>
-                </form>
-            </section>
-
-            <!-- Expense List Section -->
-            <section class="section" id="expenseListSection">
-                <h2>Expenses</h2>
-                <div id="expenseListContainer">
-                    <p class="empty-message">No expenses yet</p>
+                    <div id="beneficiariesContainer" class="checkbox-group"></div>
                 </div>
-            </section>
 
-            <!-- Balances Section -->
-            <section class="section" id="balancesSection">
-                <h2>Balances</h2>
-                <div id="balancesContainer">
-                    <p class="empty-message">No balances yet</p>
-                </div>
-            </section>
+                <button type="submit" class="btn-primary">Add Expense</button>
+            </form>
+        </section>
 
-            <!-- Settlements Section -->
-            <section class="section" id="settlementsSection">
-                <h2>Settlements</h2>
-                <div id="settlementsContainer">
-                    <p class="empty-message">No settlements needed</p>
-                </div>
-            </section>
-        </main>
+        <!-- Expenses Page -->
+        <section id="expenses" class="page">
+            <h2>All Expenses</h2>
+            <div id="expenseListContainer">
+                <p class="empty-message">No expenses yet</p>
+            </div>
+        </section>
+
+        <!-- Balances Page -->
+        <section id="balances" class="page">
+            <h2>Balances</h2>
+            <div id="balancesContainer">
+                <p class="empty-message">No balances yet</p>
+            </div>
+        </section>
+
+        <!-- Settlements Page -->
+        <section id="settlements" class="page">
+            <h2>Settlements</h2>
+            <div id="settlementsContainer">
+                <p class="empty-message">No settlements needed</p>
+            </div>
+        </section>
     </div>
 
     <!-- Main App Script -->

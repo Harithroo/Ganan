@@ -25,7 +25,7 @@
 ### 4. Expense List
 - ✅ Clean table display with columns:
   - Payer name
-  - Amount formatted ($X.XX)
+  - Amount formatted (LKRX.XX)
   - Beneficiaries (comma-separated)
   - Delete action button
 - ✅ Empty state message when no expenses
@@ -84,26 +84,26 @@
 
 **Input:**
 - People: Alice, Bob, Charlie
-- Expense 1: Alice paid $300 for Alice, Bob, Charlie
-- Expense 2: Bob paid $600 for Alice, Bob
+- Expense 1: Alice paid LKR300 for Alice, Bob, Charlie
+- Expense 2: Bob paid LKR600 for Alice, Bob
 
 **Calculations:**
-- Expense 1: Share = $300/3 = $100
-  - Alice: +$300 (paid), -$100 (owes) = +$200
-  - Bob: -$100 (owes)
-  - Charlie: -$100 (owes)
+- Expense 1: Share = LKR300/3 = LKR100
+  - Alice: +LKR300 (paid), -LKR100 (owes) = +LKR200
+  - Bob: -LKR100 (owes)
+  - Charlie: -LKR100 (owes)
   
-- Expense 2: Share = $600/2 = $300
-  - Bob: +$600 (paid), -$300 (owes) = +$300
-  - Alice: -$300 (owes)
+- Expense 2: Share = LKR600/2 = LKR300
+  - Bob: +LKR600 (paid), -LKR300 (owes) = +LKR300
+  - Alice: -LKR300 (owes)
 
 **Final Balances:**
-- Alice: +$200 (owed $200)
-- Bob: +$300 (owed $300)
-- Charlie: -$100 (owes $100)
+- Alice: +LKR200 (owed LKR200)
+- Bob: +LKR300 (owed LKR300)
+- Charlie: -LKR100 (owes LKR100)
 
 **Settlements:**
-- Charlie pays Bob: $100
-- Alice pays Bob: $200
+- Charlie pays Bob: LKR100
+- Alice pays Bob: LKR200
 
 This minimizes transactions while settling all debts.

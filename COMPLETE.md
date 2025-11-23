@@ -66,7 +66,7 @@ A **minimal, clean, production-ready expense splitter** with:
 ### 3. Expense Table
 ```
 ✓ Payer column
-✓ Amount column ($X.XX)
+✓ Amount column (LKRX.XX)
 ✓ Beneficiaries column
 ✓ Delete action
 ```
@@ -84,7 +84,7 @@ A **minimal, clean, production-ready expense splitter** with:
 ```
 ✓ Greedy algorithm
 ✓ Minimal transactions
-✓ "A pays B: $X" format
+✓ "A pays B: LKRX" format
 ✓ Perfectly balanced
 ```
 
@@ -132,20 +132,20 @@ People: Alice, Bob, Charlie
 
 **Expenses:**
 ```
-1. Alice pays $300 for all 3
-2. Bob pays $600 for Alice & Bob
+1. Alice pays LKR300 for all 3
+2. Bob pays LKR600 for Alice & Bob
 ```
 
 **Expected Results:**
 
 Balances:
-- Alice: -$100 (owes)
-- Bob: +$200 (owed)
-- Charlie: -$100 (owes)
+- Alice: -LKR100 (owes)
+- Bob: +LKR200 (owed)
+- Charlie: -LKR100 (owes)
 
 Settlements:
-- Alice pays Bob: $100
-- Charlie pays Bob: $100
+- Alice pays Bob: LKR100
+- Charlie pays Bob: LKR100
 
 **Status:** ✓ Correctly calculated
 
@@ -194,10 +194,10 @@ Everything is **clean, minimal, and focused**.
 
 1. Open `index.html` in browser
 2. Add: Alice, Bob, Charlie
-3. Expense 1: Alice $300 for all
-4. Expense 2: Bob $600 for Alice & Bob
-5. Check Balances: Alice -$100, Bob +$200, Charlie -$100
-6. Check Settlements: Alice pays Bob $100, Charlie pays Bob $100
+3. Expense 1: Alice LKR300 for all
+4. Expense 2: Bob LKR600 for Alice & Bob
+5. Check Balances: Alice -LKR100, Bob +LKR200, Charlie -LKR100
+6. Check Settlements: Alice pays Bob LKR100, Charlie pays Bob LKR100
 
 If this works → **App is perfect** ✅
 

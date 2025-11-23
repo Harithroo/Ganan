@@ -85,21 +85,21 @@ User Input
 │  │         EXPENSE TABLE                               │   │
 │  │  Payer   | Amount  | Beneficiaries | Action        │   │
 │  │  ─────────────────────────────────────────────────  │   │
-│  │  Alice   | $300.00 | A, B, C      | [Delete]      │   │
-│  │  Bob     | $600.00 | A, B         | [Delete]      │   │
+│  │  Alice   | LKR300.00 | A, B, C      | [Delete]      │   │
+│  │  Bob     | LKR600.00 | A, B         | [Delete]      │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                               │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │         BALANCES                                    │   │
-│  │  [Green] Alice owed $200.00                         │   │
-│  │  [Green] Bob owed $300.00                           │   │
-│  │  [Red]   Charlie owes $100.00                       │   │
+│  │  [Green] Alice owed LKR200.00                         │   │
+│  │  [Green] Bob owed LKR300.00                           │   │
+│  │  [Red]   Charlie owes LKR100.00                       │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                               │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │         SETTLEMENTS                                 │   │
-│  │  [Blue] Alice pays Bob: $200.00                     │   │
-│  │  [Blue] Charlie pays Bob: $100.00                   │   │
+│  │  [Blue] Alice pays Bob: LKR200.00                     │   │
+│  │  [Blue] Charlie pays Bob: LKR100.00                   │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                               │
 └─────────────────────────────────────────────────────────────┘

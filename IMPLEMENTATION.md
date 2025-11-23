@@ -115,7 +115,7 @@ A complete group expense splitter web application built with vanilla HTML, CSS, 
 - Greedy algorithm implemented
 - Minimal transaction count
 - Clear payment instructions
-- Format: "A pays B: $X"
+- Format: "A pays B: LKRX"
 - No redundant payments
 
 ### 5. UI/UX ✅
@@ -144,22 +144,22 @@ A complete group expense splitter web application built with vanilla HTML, CSS, 
 **Input:**
 ```
 People: Alice, Bob, Charlie
-Expense 1: Alice paid $300 for all 3 → each owes $100
-Expense 2: Bob paid $600 for Alice & Bob → each owes $300
+Expense 1: Alice paid LKR300 for all 3 → each owes LKR100
+Expense 2: Bob paid LKR600 for Alice & Bob → each owes LKR300
 ```
 
 **Calculations:**
 ```
-Alice: +$300 (paid) -$100 (exp1) -$300 (exp2) = -$100
-Bob: -$100 (exp1) +$600 (paid) -$300 (exp2) = +$200  
-Charlie: -$100 (exp1) = -$100
+Alice: +LKR300 (paid) -LKR100 (exp1) -LKR300 (exp2) = -LKR100
+Bob: -LKR100 (exp1) +LKR600 (paid) -LKR300 (exp2) = +LKR200  
+Charlie: -LKR100 (exp1) = -LKR100
 ```
 
 **Greedy Settlement:**
-1. Debtors: [Alice -$100, Charlie -$100] (sorted)
-2. Creditors: [Bob +$200] (sorted)
-3. Match Alice -$100 with Bob +$200 → Alice pays Bob $100
-4. Match Charlie -$100 with Bob +$100 → Charlie pays Bob $100
+1. Debtors: [Alice -LKR100, Charlie -LKR100] (sorted)
+2. Creditors: [Bob +LKR200] (sorted)
+3. Match Alice -LKR100 with Bob +LKR200 → Alice pays Bob LKR100
+4. Match Charlie -LKR100 with Bob +LKR100 → Charlie pays Bob LKR100
 5. Done!
 
 **Result: 2 transactions (optimal)**
@@ -181,7 +181,7 @@ Charlie: -$100 (exp1) = -$100
 1. **Local Storage** - Persist data between sessions
 2. **Export** - Download results as PDF/CSV
 3. **History** - Undo last expense
-4. **Currency** - Switch between $ and other currencies
+4. **Currency** - Switch between LKR and other currencies
 5. **Dark Mode** - Theme toggle
 6. **Multiple Groups** - Manage several groups separately
 

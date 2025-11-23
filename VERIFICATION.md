@@ -32,7 +32,7 @@
 ### 4. Expense List ✅
 - [x] Clean table display
 - [x] Payer column
-- [x] Amount column (formatted $X.XX)
+- [x] Amount column (formatted LKRX.XX)
 - [x] Beneficiaries column (comma-separated)
 - [x] Delete action column
 - [x] Empty state message
@@ -57,7 +57,7 @@
 - [x] Records payment instruction
 - [x] Minimizes transactions
 - [x] Handles exact settlements
-- [x] Format: "A pays B: $X"
+- [x] Format: "A pays B: LKRX"
 
 ### 7. UI Layout ✅
 - [x] 5 Sections visible
@@ -218,17 +218,17 @@
 ```
 Input:
   People: Alice, Bob, Charlie
-  Expense 1: Alice pays $300 for all 3
-  Expense 2: Bob pays $600 for Alice & Bob
+  Expense 1: Alice pays LKR300 for all 3
+  Expense 2: Bob pays LKR600 for Alice & Bob
 
 Expected Balances:
-  Alice: -$100
-  Bob: +$200
-  Charlie: -$100
+  Alice: -LKR100
+  Bob: +LKR200
+  Charlie: -LKR100
 
 Expected Settlements:
-  Alice pays Bob: $100
-  Charlie pays Bob: $100
+  Alice pays Bob: LKR100
+  Charlie pays Bob: LKR100
 
 Result: ✅ CORRECT
 ```

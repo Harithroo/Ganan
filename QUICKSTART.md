@@ -43,17 +43,17 @@ Click "Add Expense"
 **Expenses** section shows:
 | Payer | Amount | Beneficiaries | 
 |-------|--------|---------------|
-| Alice | $300.00 | Alice, Bob, Charlie |
-| Bob | $600.00 | Alice, Bob |
+| Alice | LKR300.00 | Alice, Bob, Charlie |
+| Bob | LKR600.00 | Alice, Bob |
 
 **Balances** section shows:
-- Bob owes $300.00 (green - he's owed)
-- Alice owes $200.00 (green - she's owed)  
-- Charlie owes $100.00 (red - he owes)
+- Bob owes LKR300.00 (green - he's owed)
+- Alice owes LKR200.00 (green - she's owed)  
+- Charlie owes LKR100.00 (red - he owes)
 
 **Settlements** section shows:
-- Charlie pays Bob: $100.00
-- Alice pays Bob: $200.00
+- Charlie pays Bob: LKR100.00
+- Alice pays Bob: LKR200.00
 
 This is the minimum number of transactions needed!
 

@@ -7,6 +7,30 @@ if ('serviceWorker' in navigator) {
     });
 }
 
+// ========== PAGE NAVIGATION ==========
+function showPage(pageId) {
+    // Hide all pages
+    document.querySelectorAll('.page').forEach(page => {
+        page.classList.remove('active');
+    });
+    
+    // Show target page
+    const targetPage = document.getElementById(pageId);
+    if (targetPage) {
+        targetPage.classList.add('active');
+        // Update nav buttons if needed
+        updateNav(pageId);
+    }
+}
+
+function updateNav(pageId) {
+    // Optional: highlight active nav button
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.style.borderBottom = 'none';
+    });
+    // You can extend this to highlight the active nav item
+}
+
 // ========== APP STATE ==========
 const app = {
     people: [],
@@ -211,7 +235,7 @@ const app = {
             html += `
                 <tr>
                     <td data-label="Payer:">${this.escape(expense.payer)}</td>
-                    <td data-label="Amount:">$${expense.amount.toFixed(2)}</td>
+                    <td data-label="Amount:">LKR${expense.amount.toFixed(2)}</td>
                     <td data-label="Description:">${this.escape(expense.description)}</td>
                     <td data-label="Beneficiaries:">${this.escape(beneficiaries)}</td>
                     <td data-label=""><button class="btn-delete" data-idx="${idx}">Delete</button></td>
@@ -257,7 +281,7 @@ const app = {
                 html += `
                     <div class="balance-item ${cssClass}">
                         <span class="balance-person">${this.escape(person)}</span>
-                        <span class="balance-amount">${status} $${amount}</span>
+                        <span class="balance-amount">${status} LKR${amount}</span>
                     </div>
                 `;
             });
@@ -282,7 +306,7 @@ const app = {
                 <div class="settlement-item">
                     <strong>${this.escape(settlement.from)}</strong> pays 
                     <strong>${this.escape(settlement.to)}</strong>: 
-                    <span class="settlement-amount">$${settlement.amount.toFixed(2)}</span>
+                    <span class="settlement-amount">LKR${settlement.amount.toFixed(2)}</span>
                 </div>
             `;
         });
