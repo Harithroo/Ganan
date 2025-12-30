@@ -1,7 +1,18 @@
-self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(
+        keys
+          .filter(key => key !== CACHE_NAME)
+          .map(key => caches.delete(key))
+      )
+    )
+  );
+  self.clients.claim();
+});
 
 // Pre-cache essential assets for offline use
-const CACHE_NAME = 'ganan-cache-v1';
+const CACHE_NAME = 'ganan-cache-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
