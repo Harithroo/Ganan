@@ -23,6 +23,13 @@ function showPage(pageId) {
     }
 }
 
+function toggleMenu() {
+    const hamburger = document.getElementById('hamburger');
+    const navMenu = document.getElementById('navMenu');
+    hamburger.classList.toggle('active');
+    navMenu.classList.toggle('active');
+}
+
 function updateNav(pageId) {
     // Optional: highlight active nav button
     document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -36,6 +43,9 @@ const app = {
     people: [],
     expenses: [],
     balances: {},
+    editingIndex: null,
+    smartSettlement: true,
+    collectorPerson: null,
 
     addPerson(name) {
         if (name.trim() && !this.people.includes(name.trim())) {
@@ -45,19 +55,33 @@ const app = {
     },
 
     removePerson(name) {
-        this.people = this.people.filter(p => p !== name);
-        this.render();
+        if (confirm(`Are you sure you want to remove "${name}"?`)) {
+            this.people = this.people.filter(p => p !== name);
+            this.render();
+        }
     },
 
     addExpense(payer, amount, beneficiaries, description) {
         if (!payer || amount <= 0 || beneficiaries.length === 0) return;
         
-        this.expenses.push({
-            payer,
-            amount: parseFloat(amount),
-            for: beneficiaries,
-            description: description || 'No description'
-        });
+        if (this.editingIndex !== null) {
+            // Update existing expense
+            this.expenses[this.editingIndex] = {
+                payer,
+                amount: parseFloat(amount),
+                for: beneficiaries,
+                description: description || 'No description'
+            };
+            this.editingIndex = null;
+        } else {
+            // Add new expense
+            this.expenses.push({
+                payer,
+                amount: parseFloat(amount),
+                for: beneficiaries,
+                description: description || 'No description'
+            });
+        }
         this.render();
     },
 
@@ -130,17 +154,53 @@ const app = {
         return settlements;
     },
 
+    calculateSimpleSettlements(collector) {
+        this.calculateBalances();
+
+        const settlements = [];
+
+        // For each person with negative balance (owes money), they pay the collector
+        // For each person with positive balance (owed money), collector pays them
+        Object.entries(this.balances).forEach(([person, balance]) => {
+            if (person === collector) return; // Skip the collector themselves
+
+            if (balance < -0.01) {
+                // This person owes money - they pay the collector
+                settlements.push({
+                    from: person,
+                    to: collector,
+                    amount: Math.abs(balance)
+                });
+            } else if (balance > 0.01) {
+                // This person is owed money - collector pays them
+                settlements.push({
+                    from: collector,
+                    to: person,
+                    amount: balance
+                });
+            }
+        });
+
+        return settlements;
+    },
+
     save() {
         localStorage.setItem('ganan_people', JSON.stringify(this.people));
         localStorage.setItem('ganan_expenses', JSON.stringify(this.expenses));
+        localStorage.setItem('ganan_smartSettlement', JSON.stringify(this.smartSettlement));
+        localStorage.setItem('ganan_collectorPerson', this.collectorPerson || '');
     },
 
     load() {
         const savedPeople = localStorage.getItem('ganan_people');
         const savedExpenses = localStorage.getItem('ganan_expenses');
+        const savedSmartSettlement = localStorage.getItem('ganan_smartSettlement');
+        const savedCollectorPerson = localStorage.getItem('ganan_collectorPerson');
         
         if (savedPeople) this.people = JSON.parse(savedPeople);
         if (savedExpenses) this.expenses = JSON.parse(savedExpenses);
+        if (savedSmartSettlement) this.smartSettlement = JSON.parse(savedSmartSettlement);
+        if (savedCollectorPerson) this.collectorPerson = savedCollectorPerson || null;
     },
 
     clearAll() {
@@ -192,6 +252,7 @@ const app = {
 
     renderExpenseForm() {
         const payerSelect = document.getElementById('payerSelect');
+        const collectorSelect = document.getElementById('collectorSelect');
         const beneficiariesContainer = document.getElementById('beneficiariesContainer');
 
         // Update payer dropdown
@@ -202,6 +263,20 @@ const app = {
             option.textContent = person;
             payerSelect.appendChild(option);
         });
+
+        // Update collector dropdown
+        if (collectorSelect) {
+            collectorSelect.innerHTML = '<option value="">Select person to collect</option>';
+            this.people.forEach(person => {
+                const option = document.createElement('option');
+                option.value = person;
+                option.textContent = person;
+                collectorSelect.appendChild(option);
+            });
+            if (this.collectorPerson) {
+                collectorSelect.value = this.collectorPerson;
+            }
+        }
 
         // Update beneficiaries checkboxes
         beneficiariesContainer.innerHTML = '';
@@ -238,7 +313,7 @@ const app = {
                     <td data-label="Amount:">LKR${expense.amount.toFixed(2)}</td>
                     <td data-label="Description:">${this.escape(expense.description)}</td>
                     <td data-label="Beneficiaries:">${this.escape(beneficiaries)}</td>
-                    <td data-label=""><button class="btn-delete" data-idx="${idx}">Delete</button></td>
+                    <td data-label=""><div class="btn-group"><button class="btn-edit" data-idx="${idx}">Edit</button><button class="btn-delete" data-idx="${idx}">Delete</button></div></td>
                 </tr>
             `;
         });
@@ -246,14 +321,57 @@ const app = {
         html += '</tbody></table>';
         container.innerHTML = html;
 
+        // Attach edit handlers
+        document.querySelectorAll('.btn-edit').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.getAttribute('data-idx'));
+                this.editExpense(idx);
+            });
+        });
+
         // Attach delete handlers
         document.querySelectorAll('.btn-delete').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const idx = parseInt(e.target.getAttribute('data-idx'));
-                this.expenses.splice(idx, 1);
-                this.render();
+                const expense = this.expenses[idx];
+                if (confirm(`Delete expense: ${this.escape(expense.payer)} - LKR${expense.amount.toFixed(2)}?`)) {
+                    this.expenses.splice(idx, 1);
+                    this.render();
+                }
             });
         });
+    },
+
+    editExpense(idx) {
+        const expense = this.expenses[idx];
+        this.editingIndex = idx;
+
+        // Populate the form with expense data
+        document.getElementById('payerSelect').value = expense.payer;
+        document.getElementById('amountInput').value = expense.amount;
+        document.getElementById('descriptionInput').value = expense.description;
+
+        // Set beneficiaries
+        document.querySelectorAll('.beneficiary-checkbox').forEach(checkbox => {
+            checkbox.checked = expense.for.includes(checkbox.value);
+        });
+
+        // Change button text and show cancel button
+        const submitBtn = document.querySelector('#expenseForm button[type="submit"]');
+        const cancelBtn = document.getElementById('cancelEditBtn');
+        submitBtn.textContent = 'Update Expense';
+        if (cancelBtn) cancelBtn.style.display = 'block';
+        
+        showPage('add-expense');
+    },
+
+    cancelEdit() {
+        this.editingIndex = null;
+        document.getElementById('expenseForm').reset();
+        const submitBtn = document.querySelector('#expenseForm button[type="submit"]');
+        const cancelBtn = document.getElementById('cancelEditBtn');
+        submitBtn.textContent = 'Add Expense';
+        cancelBtn.style.display = 'none';
     },
 
     renderBalances() {
@@ -292,7 +410,18 @@ const app = {
 
     renderSettlements() {
         const container = document.getElementById('settlementsContainer');
-        const settlements = this.calculateSettlements();
+        
+        let settlements = [];
+
+        if (this.smartSettlement) {
+            settlements = this.calculateSettlements();
+        } else {
+            if (!this.collectorPerson) {
+                container.innerHTML = '<p class="empty-message">Please select a collector person</p>';
+                return;
+            }
+            settlements = this.calculateSimpleSettlements(this.collectorPerson);
+        }
 
         if (settlements.length === 0) {
             container.innerHTML = '<p class="empty-message">No settlements needed</p>';
@@ -327,6 +456,38 @@ const app = {
 document.addEventListener('DOMContentLoaded', () => {
     // Load saved data
     app.load();
+
+    // Settlement Mode Toggle
+    const smartSettlementToggle = document.getElementById('smartSettlementToggle');
+    const collectorGroup = document.getElementById('collectorGroup');
+    const collectorSelect = document.getElementById('collectorSelect');
+    const modeIndicator = document.getElementById('modeIndicator');
+
+    // Set initial state
+    smartSettlementToggle.checked = app.smartSettlement;
+    collectorGroup.style.display = app.smartSettlement ? 'none' : 'block';
+    modeIndicator.textContent = app.smartSettlement ? '(Optimized)' : '(Simple Collection)';
+
+    smartSettlementToggle.addEventListener('change', (e) => {
+        app.smartSettlement = e.target.checked;
+        collectorGroup.style.display = app.smartSettlement ? 'none' : 'block';
+        modeIndicator.textContent = app.smartSettlement ? '(Optimized)' : '(Simple Collection)';
+        
+        if (!app.smartSettlement && !app.collectorPerson && app.people.length > 0) {
+            // Auto-select first person if none is selected
+            collectorSelect.value = app.people[0];
+            app.collectorPerson = app.people[0];
+        }
+
+        app.renderSettlements();
+        app.save();
+    });
+
+    collectorSelect.addEventListener('change', (e) => {
+        app.collectorPerson = e.target.value || null;
+        app.renderSettlements();
+        app.save();
+    });
 
     // Add Person
     document.getElementById('addPersonBtn').addEventListener('click', () => {
@@ -396,6 +557,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.beneficiary-checkbox').forEach(checkbox => {
             checkbox.checked = false;
         });
+
+        // Reset editing state
+        app.editingIndex = null;
+        const submitBtn = document.querySelector('#expenseForm button[type="submit"]');
+        const cancelBtn = document.getElementById('cancelEditBtn');
+        if (submitBtn) submitBtn.textContent = 'Add Expense';
+        if (cancelBtn) cancelBtn.style.display = 'none';
     });
 
     // Initial render
