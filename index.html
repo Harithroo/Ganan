@@ -4,62 +4,73 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ganan - Group Expense Splitter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="nav-brand"><button class="nav-btn" onclick="showPage('home')">Ganan</button></div>
-        <button class="hamburger" id="hamburger" onclick="toggleMenu()">
+    <nav class="navbar" aria-label="Primary navigation">
+        <div class="nav-brand">
+            <button class="nav-btn brand-btn" data-page="home" type="button">Ganan</button>
+        </div>
+        <button class="hamburger" id="hamburger" type="button" aria-label="Toggle navigation menu" aria-controls="navMenu" aria-expanded="false">
             <span></span>
             <span></span>
             <span></span>
         </button>
         <div class="nav-items" id="navMenu">
-            <button class="nav-btn" onclick="showPage('people'); toggleMenu()">People</button>
-            <button class="nav-btn" onclick="showPage('add-expense'); toggleMenu()">Add Expense</button>
-            <button class="nav-btn" onclick="showPage('expenses'); toggleMenu()">Expenses</button>
-            <button class="nav-btn" onclick="showPage('balances'); toggleMenu()">Balances</button>
-            <button class="nav-btn" onclick="showPage('settlements'); toggleMenu()">Settlements</button>
+            <button class="nav-btn" data-page="people" type="button">People</button>
+            <button class="nav-btn" data-page="add-expense" type="button">Add Expense</button>
+            <button class="nav-btn" data-page="expenses" type="button">Expenses</button>
+            <button class="nav-btn" data-page="balances" type="button">Balances</button>
+            <button class="nav-btn" data-page="settlements" type="button">Settlements</button>
         </div>
     </nav>
 
-    <div class="container">
-        <!-- Home Page -->
+    <main class="container">
         <section id="home" class="page active">
             <h1>Ganan</h1>
             <p class="subtitle">Group Expense Splitter</p>
-            <p class="welcome-text">Split group expenses fairly and get optimal settlement instructions.</p>
-            
+            <p class="welcome-text">Track shared costs, split fairly, and settle with fewer transfers.</p>
+
+            <div class="stats-grid" id="homeStats" aria-label="Summary">
+                <div class="stat-card">
+                    <p class="stat-label">People</p>
+                    <p class="stat-value" id="statPeople">0</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Expenses</p>
+                    <p class="stat-value" id="statExpenses">0</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Total Spent</p>
+                    <p class="stat-value" id="statTotal">LKR0.00</p>
+                </div>
+            </div>
+
             <div class="home-buttons">
-                <button class="btn-home" onclick="showPage('people')">Manage People</button>
-                <button class="btn-home" onclick="showPage('add-expense')">Add Expense</button>
-                <button class="btn-home" onclick="showPage('expenses')">View Expenses</button>
-                <button class="btn-home" onclick="showPage('settlements')">Get Settlements</button>
+                <button class="btn-home" data-target="people" type="button">Manage People</button>
+                <button class="btn-home" data-target="add-expense" type="button">Add Expense</button>
+                <button class="btn-home" data-target="expenses" type="button">View Expenses</button>
+                <button class="btn-home" data-target="settlements" type="button">Get Settlements</button>
             </div>
 
             <div class="home-footer">
-                <button id="clearAllBtn" class="btn-clear">Clear All Data</button>
+                <button id="clearAllBtn" class="btn-clear" type="button">Clear All Data</button>
             </div>
         </section>
 
-        <!-- People Page -->
         <section id="people" class="page">
             <h2>Manage People</h2>
             <div class="input-group">
-                <input 
-                    type="text" 
-                    id="personInput" 
-                    placeholder="Enter person name"
-                    autocomplete="off"
-                >
-                <button id="addPersonBtn">Add Person</button>
+                <input type="text" id="personInput" placeholder="Enter person name" autocomplete="off" aria-label="Person name">
+                <button id="addPersonBtn" type="button">Add Person</button>
             </div>
             <ul id="peopleList" class="list"></ul>
         </section>
 
-        <!-- Add Expense Page -->
         <section id="add-expense" class="page">
             <h2>Add Expense</h2>
             <form id="expenseForm">
@@ -72,43 +83,30 @@
 
                 <div class="form-group">
                     <label for="amountInput">Amount:</label>
-                    <input 
-                        type="number" 
-                        id="amountInput" 
-                        placeholder="0.00" 
-                        step="0.01"
-                        min="0"
-                        required
-                    >
+                    <input type="number" id="amountInput" placeholder="0.00" step="0.01" min="0" required>
                 </div>
 
                 <div class="form-group">
                     <label for="descriptionInput">Description:</label>
-                    <input 
-                        type="text" 
-                        id="descriptionInput" 
-                        placeholder="e.g., Dinner, Movie tickets..."
-                        autocomplete="off"
-                    >
+                    <input type="text" id="descriptionInput" placeholder="e.g., Dinner, Movie tickets..." autocomplete="off">
                 </div>
 
                 <div class="form-group">
                     <label>Beneficiaries:</label>
-                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <div class="helper-actions">
                         <button type="button" id="selectAllBtn" class="btn-helper">Select All</button>
                         <button type="button" id="deselectAllBtn" class="btn-helper">Deselect All</button>
                     </div>
                     <div id="beneficiariesContainer" class="checkbox-group"></div>
                 </div>
 
-                <div style="display: flex; gap: 10px;">
-                    <button type="submit" class="btn-primary">Add Expense</button>
-                    <button type="button" id="cancelEditBtn" class="btn-cancel" style="display: none;" onclick="app.cancelEdit()">Cancel</button>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary" id="submitExpenseBtn">Add Expense</button>
+                    <button type="button" id="cancelEditBtn" class="btn-cancel" hidden>Cancel</button>
                 </div>
             </form>
         </section>
 
-        <!-- Expenses Page -->
         <section id="expenses" class="page">
             <h2>All Expenses</h2>
             <div id="expenseListContainer">
@@ -116,7 +114,6 @@
             </div>
         </section>
 
-        <!-- Balances Page -->
         <section id="balances" class="page">
             <h2>Balances</h2>
             <div id="balancesContainer">
@@ -124,28 +121,22 @@
             </div>
         </section>
 
-        <!-- Settlements Page -->
         <section id="settlements" class="page">
             <h2>Settlements</h2>
-            
+
             <div class="settlement-controls">
                 <div class="form-group">
                     <label for="smartSettlementToggle">Settlement Mode:</label>
                     <div class="toggle-group">
                         <label class="toggle-label">
-                            <input 
-                                type="checkbox" 
-                                id="smartSettlementToggle" 
-                                class="toggle-checkbox"
-                                checked
-                            >
+                            <input type="checkbox" id="smartSettlementToggle" class="toggle-checkbox" checked>
                             <span>Smart Settlement</span>
                         </label>
                         <span class="mode-indicator" id="modeIndicator">(Optimized)</span>
                     </div>
                 </div>
 
-                <div class="form-group" id="collectorGroup" style="display: none;">
+                <div class="form-group" id="collectorGroup" hidden>
                     <label for="collectorSelect">Collector Person:</label>
                     <select id="collectorSelect">
                         <option value="">Select person to collect</option>
@@ -157,9 +148,8 @@
                 <p class="empty-message">No settlements needed</p>
             </div>
         </section>
-    </div>
+    </main>
 
-    <!-- Main App Script -->
     <script src="app.js"></script>
 </body>
 </html>
