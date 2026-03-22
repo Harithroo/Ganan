@@ -23,6 +23,7 @@
         <div class="nav-items" id="navMenu">
             <button class="nav-btn" data-page="people" type="button">People</button>
             <button class="nav-btn" data-page="add-expense" type="button">Add Expense</button>
+            <button class="nav-btn" data-page="conversions" type="button">Conversions</button>
             <button class="nav-btn" data-page="expenses" type="button">Expenses</button>
             <button class="nav-btn" data-page="balances" type="button">Balances</button>
             <button class="nav-btn" data-page="settlements" type="button">Settlements</button>
@@ -81,9 +82,45 @@
                     </select>
                 </div>
 
-                <div class="form-group">
-                    <label for="amountInput">Amount:</label>
-                    <input type="number" id="amountInput" placeholder="0.00" step="0.01" min="0" required>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="expenseCurrencyInput">Currency:</label>
+                        <input id="expenseCurrencyInput" list="currencyList" value="LKR" autocomplete="off" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="amountInput">Amount:</label>
+                        <input type="number" id="amountInput" placeholder="0.00" step="0.01" min="0" required>
+                    </div>
+                </div>
+
+                <div class="form-group" id="fxGroup" hidden>
+                    <label for="fxMethodSelect">Convert to LKR using:</label>
+                    <select id="fxMethodSelect">
+                        <option value="manual">Rate at purchase</option>
+                        <option value="allocations">My conversions</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="fxManualGroup" hidden>
+                    <label for="fxRateInput">Exchange rate (LKR per 1 unit):</label>
+                    <input type="number" id="fxRateInput" placeholder="e.g., 310.25" step="0.0001" min="0">
+                </div>
+
+                <div class="form-group" id="fxAllocationsGroup" hidden>
+                    <label>Conversions used (same currency):</label>
+                    <div class="helper-actions">
+                        <button type="button" id="fxAutoFillBtn" class="btn-helper">Auto-fill</button>
+                        <button type="button" id="fxClearAllocationsBtn" class="btn-helper">Clear</button>
+                    </div>
+                    <div id="fxAllocationsContainer" class="allocation-list"></div>
+                </div>
+
+                <div class="form-group" id="fxPreviewGroup" hidden>
+                    <p class="fx-preview">
+                        Effective cost:
+                        <strong id="fxBasePreview">LKR0.00</strong>
+                        <span class="text-muted" id="fxRatePreview"></span>
+                    </p>
                 </div>
 
                 <div class="form-group">
@@ -105,6 +142,91 @@
                     <button type="button" id="cancelEditBtn" class="btn-cancel" hidden>Cancel</button>
                 </div>
             </form>
+        </section>
+
+        <section id="conversions" class="page">
+            <h2>Conversions</h2>
+            <form id="conversionForm">
+                <div class="form-group">
+                    <label for="conversionPersonSelect">Person:</label>
+                    <select id="conversionPersonSelect" required>
+                        <option value="">Select person</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="conversionFromAmount">From amount:</label>
+                        <input type="number" id="conversionFromAmount" placeholder="0.00" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="conversionFromCurrency">From currency:</label>
+                        <input id="conversionFromCurrency" list="currencyList" value="LKR" autocomplete="off" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="conversionToAmount">To amount:</label>
+                        <input type="number" id="conversionToAmount" placeholder="0.00" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="conversionToCurrency">To currency:</label>
+                        <input id="conversionToCurrency" list="currencyList" value="USD" autocomplete="off" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="conversionNoteInput">Note (optional):</label>
+                    <input type="text" id="conversionNoteInput" placeholder="e.g., Airport exchange" autocomplete="off">
+                </div>
+
+                <div class="form-group" id="conversionFundingGroup" hidden>
+                    <label for="conversionFundingMethodSelect">Cost basis (LKR):</label>
+                    <select id="conversionFundingMethodSelect">
+                        <option value="allocations">Use my holdings</option>
+                        <option value="manual">Enter rate to LKR</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="conversionManualGroup" hidden>
+                    <label for="conversionFromRateToLkrInput">Rate (LKR per 1 from-currency):</label>
+                    <input type="number" id="conversionFromRateToLkrInput" placeholder="e.g., 320.50" step="0.0001" min="0">
+                </div>
+
+                <div class="form-group" id="conversionAllocationsGroup" hidden>
+                    <label>Holdings used (from currency):</label>
+                    <div class="helper-actions">
+                        <button type="button" id="conversionAutoFillBtn" class="btn-helper">Auto-fill</button>
+                        <button type="button" id="conversionClearAllocationsBtn" class="btn-helper">Clear</button>
+                    </div>
+                    <div id="conversionAllocationsContainer" class="allocation-list"></div>
+                </div>
+
+                <div class="form-group" id="conversionPreviewGroup" hidden>
+                    <p class="fx-preview">
+                        Cost in LKR:
+                        <strong id="conversionCostPreview">LKR0.00</strong>
+                        <span class="text-muted" id="conversionRatePreview"></span>
+                    </p>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary" id="submitConversionBtn">Add Conversion</button>
+                </div>
+            </form>
+
+            <div class="divider"></div>
+
+            <h3 class="subheading">Holdings</h3>
+            <div id="holdingsContainer">
+                <p class="empty-message">No holdings yet</p>
+            </div>
+
+            <h3 class="subheading">All Conversions</h3>
+            <div id="conversionListContainer">
+                <p class="empty-message">No conversions yet</p>
+            </div>
         </section>
 
         <section id="expenses" class="page">
@@ -149,6 +271,19 @@
             </div>
         </section>
     </main>
+
+    <datalist id="currencyList">
+        <option value="LKR"></option>
+        <option value="USD"></option>
+        <option value="MYR"></option>
+        <option value="EUR"></option>
+        <option value="GBP"></option>
+        <option value="SGD"></option>
+        <option value="THB"></option>
+        <option value="AED"></option>
+        <option value="JPY"></option>
+        <option value="INR"></option>
+    </datalist>
 
     <script src="app.js"></script>
 </body>

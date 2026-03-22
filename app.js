@@ -9,17 +9,63 @@ if ('serviceWorker' in navigator) {
 const STORAGE_KEYS = {
     people: 'ganan_people',
     expenses: 'ganan_expenses',
+    conversions: 'ganan_conversions',
     smartSettlement: 'ganan_smartSettlement',
     collectorPerson: 'ganan_collectorPerson'
 };
 
 const EPSILON = 0.01;
+const BASE_CURRENCY = 'LKR';
 const currencyFormatter = new Intl.NumberFormat('en-LK', {
     style: 'currency',
-    currency: 'LKR',
+    currency: BASE_CURRENCY,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
 });
+
+const currencyFormatters = new Map();
+function formatMoney(amount, currency) {
+    const normalized = normalizeCurrency(currency);
+    if (normalized === BASE_CURRENCY) return currencyFormatter.format(amount);
+
+    if (!currencyFormatters.has(normalized)) {
+        try {
+            currencyFormatters.set(
+                normalized,
+                new Intl.NumberFormat('en', {
+                    style: 'currency',
+                    currency: normalized,
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                })
+            );
+        } catch (error) {
+            currencyFormatters.set(normalized, null);
+        }
+    }
+
+    const formatter = currencyFormatters.get(normalized);
+    if (!formatter) return `${normalized} ${Number(amount).toFixed(2)}`;
+    return formatter.format(amount);
+}
+
+function normalizeCurrency(code) {
+    const normalized = String(code || '').trim().toUpperCase();
+    if (!normalized) return BASE_CURRENCY;
+    return normalized;
+}
+
+function roundMoney(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function generateId(prefix) {
+    const safePrefix = prefix ? `${prefix}_` : '';
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return `${safePrefix}${crypto.randomUUID()}`;
+    }
+    return `${safePrefix}${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
 function showPage(pageId) {
     const pages = document.querySelectorAll('.page');
@@ -55,10 +101,13 @@ function closeMenu() {
 const app = {
     people: [],
     expenses: [],
+    conversions: [],
     balances: {},
     editingIndex: null,
     smartSettlement: true,
     collectorPerson: null,
+    fxAllocationsContextKey: null,
+    conversionAllocationsContextKey: null,
 
     elements: {},
 
@@ -67,12 +116,24 @@ const app = {
             personInput: document.getElementById('personInput'),
             peopleList: document.getElementById('peopleList'),
             payerSelect: document.getElementById('payerSelect'),
+            expenseCurrencyInput: document.getElementById('expenseCurrencyInput'),
             amountInput: document.getElementById('amountInput'),
             descriptionInput: document.getElementById('descriptionInput'),
             beneficiariesContainer: document.getElementById('beneficiariesContainer'),
             expenseForm: document.getElementById('expenseForm'),
             submitExpenseBtn: document.getElementById('submitExpenseBtn'),
             cancelEditBtn: document.getElementById('cancelEditBtn'),
+            fxGroup: document.getElementById('fxGroup'),
+            fxMethodSelect: document.getElementById('fxMethodSelect'),
+            fxManualGroup: document.getElementById('fxManualGroup'),
+            fxRateInput: document.getElementById('fxRateInput'),
+            fxAllocationsGroup: document.getElementById('fxAllocationsGroup'),
+            fxAutoFillBtn: document.getElementById('fxAutoFillBtn'),
+            fxClearAllocationsBtn: document.getElementById('fxClearAllocationsBtn'),
+            fxAllocationsContainer: document.getElementById('fxAllocationsContainer'),
+            fxPreviewGroup: document.getElementById('fxPreviewGroup'),
+            fxBasePreview: document.getElementById('fxBasePreview'),
+            fxRatePreview: document.getElementById('fxRatePreview'),
             expenseListContainer: document.getElementById('expenseListContainer'),
             balancesContainer: document.getElementById('balancesContainer'),
             settlementsContainer: document.getElementById('settlementsContainer'),
@@ -82,7 +143,27 @@ const app = {
             modeIndicator: document.getElementById('modeIndicator'),
             statPeople: document.getElementById('statPeople'),
             statExpenses: document.getElementById('statExpenses'),
-            statTotal: document.getElementById('statTotal')
+            statTotal: document.getElementById('statTotal'),
+            conversionForm: document.getElementById('conversionForm'),
+            conversionPersonSelect: document.getElementById('conversionPersonSelect'),
+            conversionFromAmount: document.getElementById('conversionFromAmount'),
+            conversionFromCurrency: document.getElementById('conversionFromCurrency'),
+            conversionToAmount: document.getElementById('conversionToAmount'),
+            conversionToCurrency: document.getElementById('conversionToCurrency'),
+            conversionNoteInput: document.getElementById('conversionNoteInput'),
+            conversionFundingGroup: document.getElementById('conversionFundingGroup'),
+            conversionFundingMethodSelect: document.getElementById('conversionFundingMethodSelect'),
+            conversionManualGroup: document.getElementById('conversionManualGroup'),
+            conversionFromRateToLkrInput: document.getElementById('conversionFromRateToLkrInput'),
+            conversionAllocationsGroup: document.getElementById('conversionAllocationsGroup'),
+            conversionAutoFillBtn: document.getElementById('conversionAutoFillBtn'),
+            conversionClearAllocationsBtn: document.getElementById('conversionClearAllocationsBtn'),
+            conversionAllocationsContainer: document.getElementById('conversionAllocationsContainer'),
+            conversionPreviewGroup: document.getElementById('conversionPreviewGroup'),
+            conversionCostPreview: document.getElementById('conversionCostPreview'),
+            conversionRatePreview: document.getElementById('conversionRatePreview'),
+            holdingsContainer: document.getElementById('holdingsContainer'),
+            conversionListContainer: document.getElementById('conversionListContainer')
         };
     },
 
@@ -112,6 +193,9 @@ const app = {
             }))
             .filter((expense) => expense.payer !== name && expense.for.length > 0);
 
+        this.conversions = this.conversions.filter((conversion) => conversion.person !== name);
+        this.pruneMissingConversionReferences();
+
         if (this.collectorPerson === name) {
             this.collectorPerson = this.people[0] || null;
         }
@@ -119,16 +203,8 @@ const app = {
         this.render();
     },
 
-    addExpense(payer, amount, beneficiaries, description) {
-        const parsedAmount = Number.parseFloat(amount);
-        if (!payer || parsedAmount <= 0 || beneficiaries.length === 0) return;
-
-        const payload = {
-            payer,
-            amount: parsedAmount,
-            for: beneficiaries,
-            description: description?.trim() || 'No description'
-        };
+    upsertExpense(payload) {
+        if (!payload?.payer || payload.amount <= 0 || payload.for.length === 0) return;
 
         if (this.editingIndex !== null) {
             this.expenses[this.editingIndex] = payload;
@@ -138,6 +214,119 @@ const app = {
         }
 
         this.render();
+    },
+
+    getExpenseOriginal(expense) {
+        const currency = normalizeCurrency(expense?.original?.currency || BASE_CURRENCY);
+        const originalAmount = Number(expense?.original?.amount);
+        if (Number.isFinite(originalAmount) && originalAmount > 0) {
+            return { currency, amount: originalAmount };
+        }
+        return { currency: BASE_CURRENCY, amount: Number(expense?.amount) || 0 };
+    },
+
+    getConversionById(id) {
+        return this.conversions.find((conversion) => conversion.id === id) || null;
+    },
+
+    getConversionLotRate(conversion) {
+        const toAmount = Number(conversion?.to?.amount);
+        const lkrCost = Number(conversion?.lkrCost);
+        if (!Number.isFinite(toAmount) || toAmount <= 0) return null;
+        if (!Number.isFinite(lkrCost) || lkrCost < 0) return null;
+        return lkrCost / toAmount;
+    },
+
+    computeConversionUsage({ excludeExpenseId = null, excludeConversionId = null } = {}) {
+        const used = {};
+        const add = (conversionId, amount) => {
+            if (!conversionId) return;
+            const parsed = Number(amount);
+            if (!Number.isFinite(parsed) || parsed <= 0) return;
+            used[conversionId] = (used[conversionId] || 0) + parsed;
+        };
+
+        this.expenses.forEach((expense) => {
+            if (excludeExpenseId && expense.id === excludeExpenseId) return;
+            const sources = expense?.fx?.sources || [];
+            sources.forEach((source) => {
+                if (source?.kind !== 'conversion') return;
+                add(source.conversionId, source.amount);
+            });
+        });
+
+        this.conversions.forEach((conversion) => {
+            if (excludeConversionId && conversion.id === excludeConversionId) return;
+            const sources = conversion?.funding?.sources || [];
+            sources.forEach((source) => {
+                if (source?.kind !== 'conversion') return;
+                add(source.conversionId, source.amount);
+            });
+        });
+
+        return used;
+    },
+
+    getAvailableLots(person, currency, { excludeExpenseId = null, excludeConversionId = null } = {}) {
+        const normalizedCurrency = normalizeCurrency(currency);
+        const used = this.computeConversionUsage({ excludeExpenseId, excludeConversionId });
+
+        return this.conversions
+            .filter((conversion) => conversion.person === person && normalizeCurrency(conversion?.to?.currency) === normalizedCurrency)
+            .map((conversion) => {
+                const toAmount = Number(conversion?.to?.amount) || 0;
+                const usedAmount = used[conversion.id] || 0;
+                const remaining = Math.max(0, toAmount - usedAmount);
+                return { conversion, remaining };
+            })
+            .filter(({ remaining }) => remaining > EPSILON)
+            .sort((a, b) => (a.conversion.createdAt || 0) - (b.conversion.createdAt || 0));
+    },
+
+    computeSourcesLkrCost(sources) {
+        let total = 0;
+        for (const source of sources || []) {
+            if (!source) continue;
+            if (source.kind === 'manual') {
+                const amount = Number(source.amount);
+                const rate = Number(source.rateToBase);
+                if (!Number.isFinite(amount) || amount <= 0) return null;
+                if (!Number.isFinite(rate) || rate <= 0) return null;
+                total += amount * rate;
+                continue;
+            }
+
+            if (source.kind === 'conversion') {
+                const amount = Number(source.amount);
+                if (!Number.isFinite(amount) || amount <= 0) return null;
+                const conversion = this.getConversionById(source.conversionId);
+                const rate = this.getConversionLotRate(conversion);
+                if (!conversion || rate === null) return null;
+                total += amount * rate;
+                continue;
+            }
+        }
+        return total;
+    },
+
+    pruneMissingConversionReferences() {
+        const existing = new Set(this.conversions.map((conversion) => conversion.id));
+        const pruneSources = (sources) =>
+            (sources || []).filter((source) => source?.kind !== 'conversion' || existing.has(source.conversionId));
+
+        this.expenses = this.expenses.map((expense) => {
+            if (!expense?.fx?.sources) return expense;
+            const nextSources = pruneSources(expense.fx.sources);
+            if (nextSources.length === expense.fx.sources.length) return expense;
+            return { ...expense, fx: { ...expense.fx, sources: nextSources } };
+        });
+
+        this.conversions = this.conversions.map((conversion) => {
+            if (!conversion?.funding?.sources) return conversion;
+            const nextSources = pruneSources(conversion.funding.sources);
+            if (nextSources.length === conversion.funding.sources.length) return conversion;
+            return { ...conversion, funding: { ...conversion.funding, sources: nextSources } };
+        });
     },
 
     calculateBalances() {
@@ -217,6 +406,7 @@ const app = {
     save() {
         localStorage.setItem(STORAGE_KEYS.people, JSON.stringify(this.people));
         localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(this.expenses));
+        localStorage.setItem(STORAGE_KEYS.conversions, JSON.stringify(this.conversions));
         localStorage.setItem(STORAGE_KEYS.smartSettlement, JSON.stringify(this.smartSettlement));
         localStorage.setItem(STORAGE_KEYS.collectorPerson, this.collectorPerson || '');
     },
@@ -225,15 +415,129 @@ const app = {
         try {
             this.people = JSON.parse(localStorage.getItem(STORAGE_KEYS.people) || '[]');
             this.expenses = JSON.parse(localStorage.getItem(STORAGE_KEYS.expenses) || '[]');
+            this.conversions = JSON.parse(localStorage.getItem(STORAGE_KEYS.conversions) || '[]');
             this.smartSettlement = JSON.parse(localStorage.getItem(STORAGE_KEYS.smartSettlement) || 'true');
             this.collectorPerson = localStorage.getItem(STORAGE_KEYS.collectorPerson) || null;
         } catch (error) {
             console.error('Failed to load local data:', error);
             this.people = [];
             this.expenses = [];
+            this.conversions = [];
             this.smartSettlement = true;
             this.collectorPerson = null;
         }
+
+        this.migrateData();
+    },
+
+    migrateData() {
+        if (!Array.isArray(this.people)) this.people = [];
+        if (!Array.isArray(this.expenses)) this.expenses = [];
+        if (!Array.isArray(this.conversions)) this.conversions = [];
+
+        const knownPeople = new Set(this.people);
+
+        this.expenses = this.expenses
+            .map((expense) => {
+                const baseAmount = Number(expense?.amount);
+                const payer = String(expense?.payer || '').trim();
+                const beneficiaries = Array.isArray(expense?.for) ? expense.for.filter((p) => knownPeople.has(p)) : [];
+                const description = String(expense?.description || 'No description');
+
+                const id = expense?.id || generateId('exp');
+                const originalCurrency = normalizeCurrency(expense?.original?.currency || BASE_CURRENCY);
+                const originalAmount = Number(expense?.original?.amount);
+
+                const original =
+                    Number.isFinite(originalAmount) && originalAmount > 0
+                        ? { amount: originalAmount, currency: originalCurrency }
+                        : { amount: Number.isFinite(baseAmount) ? baseAmount : 0, currency: BASE_CURRENCY };
+
+                const fx = expense?.fx && typeof expense.fx === 'object' ? expense.fx : null;
+
+                const normalizedFx = fx
+                    ? {
+                          method: fx.method,
+                          rateToBase: fx.rateToBase,
+                          sources: Array.isArray(fx.sources)
+                              ? fx.sources
+                                    .filter((source) => source && (source.kind === 'conversion' || source.kind === 'manual'))
+                                    .map((source) => ({
+                                        kind: source.kind,
+                                        conversionId: source.conversionId,
+                                        amount: Number(source.amount),
+                                        rateToBase: Number(source.rateToBase)
+                                    }))
+                              : []
+                      }
+                    : null;
+
+                return {
+                    id,
+                    payer,
+                    amount: Number.isFinite(baseAmount) ? baseAmount : 0,
+                    original,
+                    fx: normalizedFx || undefined,
+                    for: beneficiaries,
+                    description,
+                    createdAt: Number(expense?.createdAt) || 0
+                };
+            })
+            .filter((expense) => knownPeople.has(expense.payer) && expense.for.length > 0 && expense.amount > 0);
+
+        this.conversions = this.conversions
+            .map((conversion) => {
+                const id = conversion?.id || generateId('fx');
+                const person = String(conversion?.person || '').trim();
+                const fromCurrency = normalizeCurrency(conversion?.from?.currency || BASE_CURRENCY);
+                const toCurrency = normalizeCurrency(conversion?.to?.currency || BASE_CURRENCY);
+                const fromAmount = Number(conversion?.from?.amount) || 0;
+                const toAmount = Number(conversion?.to?.amount) || 0;
+
+                const funding = conversion?.funding && typeof conversion.funding === 'object' ? conversion.funding : null;
+                const normalizedFunding = funding
+                    ? {
+                          method: funding.method,
+                          rateToBase: Number(funding.rateToBase),
+                          sources: Array.isArray(funding.sources)
+                              ? funding.sources
+                                    .filter((source) => source && (source.kind === 'conversion' || source.kind === 'manual'))
+                                    .map((source) => ({
+                                        kind: source.kind,
+                                        conversionId: source.conversionId,
+                                        amount: Number(source.amount),
+                                        rateToBase: Number(source.rateToBase)
+                                    }))
+                              : []
+                      }
+                    : null;
+
+                let lkrCost = Number(conversion?.lkrCost);
+                if (!Number.isFinite(lkrCost) || lkrCost < 0) {
+                    if (fromCurrency === BASE_CURRENCY) {
+                        lkrCost = fromAmount;
+                    } else if (normalizedFunding?.method === 'manual' && Number.isFinite(normalizedFunding.rateToBase) && normalizedFunding.rateToBase > 0) {
+                        lkrCost = fromAmount * normalizedFunding.rateToBase;
+                    } else if (Array.isArray(normalizedFunding?.sources) && normalizedFunding.sources.length > 0) {
+                        const computed = this.computeSourcesLkrCost(normalizedFunding.sources);
+                        lkrCost = computed === null ? 0 : computed;
+                    } else {
+                        lkrCost = 0;
+                    }
+                }
+
+                return {
+                    id,
+                    person,
+                    from: { amount: fromAmount, currency: fromCurrency },
+                    to: { amount: toAmount, currency: toCurrency },
+                    note: String(conversion?.note || ''),
+                    funding: normalizedFunding || undefined,
+                    lkrCost: Number.isFinite(lkrCost) ? lkrCost : 0,
+                    createdAt: Number(conversion?.createdAt) || 0
+                };
+            })
+            .filter((conversion) => knownPeople.has(conversion.person) && conversion.from.amount > 0 && conversion.to.amount > 0);
     },
 
     clearAll() {
@@ -241,6 +545,7 @@ const app = {
 
         this.people = [];
         this.expenses = [];
+        this.conversions = [];
         this.balances = {};
         this.editingIndex = null;
         this.collectorPerson = null;
@@ -252,6 +557,11 @@ const app = {
     resetExpenseForm() {
         this.elements.expenseForm.reset();
         this.editingIndex = null;
+        this.fxAllocationsContextKey = null;
+        this.elements.expenseCurrencyInput.value = BASE_CURRENCY;
+        this.elements.fxRateInput.value = '';
+        this.clearAllocations(this.elements.fxAllocationsContainer);
+        this.refreshExpenseFxUI();
         this.elements.submitExpenseBtn.textContent = 'Add Expense';
         this.elements.cancelEditBtn.hidden = true;
     },
@@ -259,7 +569,10 @@ const app = {
     render() {
         this.renderPeople();
         this.renderExpenseForm();
+        this.renderConversionForm();
         this.renderExpenseList();
+        this.renderHoldings();
+        this.renderConversionList();
         this.renderBalances();
         this.renderSettlements();
         this.renderHomeStats();
@@ -292,6 +605,10 @@ const app = {
     },
 
     renderExpenseForm() {
+        const previousPayer = this.elements.payerSelect.value;
+        const previousCollector = this.elements.collectorSelect.value;
+        const previousConversionPerson = this.elements.conversionPersonSelect.value;
+
         const buildOptions = (placeholder) => [
             `<option value="">${placeholder}</option>`,
             ...this.people.map((person) => `<option value="${this.escape(person)}">${this.escape(person)}</option>`)
@@ -299,6 +616,11 @@ const app = {
 
         this.elements.payerSelect.innerHTML = buildOptions('Select person');
         this.elements.collectorSelect.innerHTML = buildOptions('Select person to collect');
+        this.elements.conversionPersonSelect.innerHTML = buildOptions('Select person');
+
+        if (previousPayer) this.elements.payerSelect.value = previousPayer;
+        if (previousCollector) this.elements.collectorSelect.value = previousCollector;
+        if (previousConversionPerson) this.elements.conversionPersonSelect.value = previousConversionPerson;
 
         if (this.collectorPerson) {
             this.elements.collectorSelect.value = this.collectorPerson;
@@ -314,6 +636,430 @@ const app = {
                 `
             )
             .join('');
+
+        this.refreshExpenseFxUI();
+    },
+
+    renderConversionForm() {
+        this.refreshConversionFundingUI();
+    },
+
+    getEditingExpenseId() {
+        if (this.editingIndex === null) return null;
+        const expense = this.expenses[this.editingIndex];
+        return expense?.id || null;
+    },
+
+    getAllocationsMapFromSources(sources) {
+        const allocations = {};
+        (sources || []).forEach((source) => {
+            if (!source || source.kind !== 'conversion') return;
+            const amount = Number(source.amount);
+            if (!Number.isFinite(amount) || amount <= 0) return;
+            allocations[source.conversionId] = (allocations[source.conversionId] || 0) + amount;
+        });
+        return allocations;
+    },
+
+    readAllocationSourcesFromContainer(container) {
+        const sources = [];
+        if (!container) return sources;
+
+        container.querySelectorAll('input[data-conversion-id]').forEach((input) => {
+            const conversionId = input.getAttribute('data-conversion-id');
+            const amount = Number(input.value);
+            if (!conversionId) return;
+            if (!Number.isFinite(amount) || amount <= 0) return;
+            sources.push({ kind: 'conversion', conversionId, amount });
+        });
+
+        return sources;
+    },
+
+    renderAllocationsEditor(container, lotsWithRemaining, allocationsMap) {
+        if (!container) return;
+
+        if (!lotsWithRemaining || lotsWithRemaining.length === 0) {
+            container.innerHTML = '<p class="empty-message">No matching converted funds available</p>';
+            return;
+        }
+
+        container.innerHTML = lotsWithRemaining
+            .map(({ conversion, remaining }) => {
+                const usedByDraft = allocationsMap?.[conversion.id] || 0;
+                const availableForDraft = remaining;
+                const rate = this.getConversionLotRate(conversion);
+                const rateLabel = rate === null ? '' : `Rate: ${roundMoney(rate)} LKR/${this.escape(conversion.to.currency)}`;
+                const remainingLabel = `Available: ${formatMoney(remaining, conversion.to.currency)}`;
+
+                return `
+                    <div class="allocation-item">
+                        <div class="allocation-meta">
+                            <div class="allocation-title">${this.escape(conversion.person)} • ${formatMoney(conversion.to.amount, conversion.to.currency)}</div>
+                            <div class="allocation-subtitle">${this.escape(remainingLabel)} • Cost: ${formatMoney(conversion.lkrCost, BASE_CURRENCY)} • ${this.escape(rateLabel)}</div>
+                        </div>
+                        <input
+                            type="number"
+                            class="allocation-input"
+                            data-conversion-id="${this.escape(conversion.id)}"
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                            max="${availableForDraft}"
+                            value="${usedByDraft > 0 ? usedByDraft : ''}"
+                        >
+                    </div>
+                `;
+            })
+            .join('');
+    },
+
+    autoFillAllocations(container, lotsWithRemaining, targetAmount) {
+        if (!container) return;
+        const remainingToFill = Number(targetAmount);
+        if (!Number.isFinite(remainingToFill) || remainingToFill <= 0) return;
+
+        let left = remainingToFill;
+        lotsWithRemaining.forEach(({ conversion, remaining }) => {
+            if (left <= EPSILON) return;
+            const take = Math.min(left, remaining);
+            const escapedId =
+                typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(conversion.id) : String(conversion.id).replace(/\"/g, '\\"');
+            const input = container.querySelector(`input[data-conversion-id="${escapedId}"]`);
+            if (input) {
+                input.value = take > 0 ? String(roundMoney(take)) : '';
+            }
+            left -= take;
+        });
+    },
+
+    clearAllocations(container) {
+        if (!container) return;
+        container.querySelectorAll('input[data-conversion-id]').forEach((input) => {
+            input.value = '';
+        });
+    },
+
+    refreshExpenseFxUI() {
+        const currency = normalizeCurrency(this.elements.expenseCurrencyInput.value);
+        this.elements.expenseCurrencyInput.value = currency;
+
+        const isBase = currency === BASE_CURRENCY;
+        this.elements.fxGroup.hidden = isBase;
+        this.elements.fxManualGroup.hidden = true;
+        this.elements.fxAllocationsGroup.hidden = true;
+        this.elements.fxPreviewGroup.hidden = isBase;
+
+        if (isBase) {
+            this.fxAllocationsContextKey = null;
+            this.elements.fxRateInput.value = '';
+            this.elements.fxRatePreview.textContent = '';
+            this.elements.fxBasePreview.textContent = formatMoney(0, BASE_CURRENCY);
+            return;
+        }
+
+        const method = this.elements.fxMethodSelect.value || 'manual';
+        const payer = this.elements.payerSelect.value;
+        const originalAmount = Number.parseFloat(this.elements.amountInput.value);
+        const editingExpenseId = this.getEditingExpenseId();
+
+        if (method === 'manual') {
+            this.elements.fxManualGroup.hidden = false;
+            const rate = Number.parseFloat(this.elements.fxRateInput.value);
+            if (Number.isFinite(originalAmount) && originalAmount > 0 && Number.isFinite(rate) && rate > 0) {
+                const base = roundMoney(originalAmount * rate);
+                this.elements.fxBasePreview.textContent = formatMoney(base, BASE_CURRENCY);
+                this.elements.fxRatePreview.textContent = ` • ${roundMoney(rate)} LKR/${currency}`;
+            } else {
+                this.elements.fxBasePreview.textContent = formatMoney(0, BASE_CURRENCY);
+                this.elements.fxRatePreview.textContent = '';
+            }
+            return;
+        }
+
+        this.elements.fxAllocationsGroup.hidden = false;
+
+        const contextKey = `${payer}|${currency}|${editingExpenseId || ''}`;
+        const needsRebuild = this.fxAllocationsContextKey !== contextKey;
+        this.fxAllocationsContextKey = contextKey;
+
+        let lots = [];
+        if (payer) {
+            lots = this.getAvailableLots(payer, currency, { excludeExpenseId: editingExpenseId });
+        }
+
+        if (needsRebuild) {
+            const existingSources = editingExpenseId
+                ? this.expenses.find((expense) => expense.id === editingExpenseId)?.fx?.sources
+                : null;
+            const allocationsMap = this.getAllocationsMapFromSources(existingSources);
+            this.renderAllocationsEditor(this.elements.fxAllocationsContainer, lots, allocationsMap);
+        }
+
+        const sources = this.readAllocationSourcesFromContainer(this.elements.fxAllocationsContainer);
+        const sumOriginal = sources.reduce((sum, source) => sum + Number(source.amount || 0), 0);
+        const cost = this.computeSourcesLkrCost(sources);
+
+        if (cost !== null && Number.isFinite(originalAmount) && originalAmount > 0 && Math.abs(sumOriginal - originalAmount) < EPSILON) {
+            const base = roundMoney(cost);
+            const effectiveRate = base / originalAmount;
+            this.elements.fxBasePreview.textContent = formatMoney(base, BASE_CURRENCY);
+            this.elements.fxRatePreview.textContent = ` • ${roundMoney(effectiveRate)} LKR/${currency}`;
+        } else {
+            this.elements.fxBasePreview.textContent = formatMoney(0, BASE_CURRENCY);
+            this.elements.fxRatePreview.textContent = sources.length > 0 ? ' • Allocations must match the amount' : '';
+        }
+    },
+
+    refreshConversionFundingUI() {
+        const person = this.elements.conversionPersonSelect.value;
+        const fromCurrency = normalizeCurrency(this.elements.conversionFromCurrency.value);
+        const toCurrency = normalizeCurrency(this.elements.conversionToCurrency.value);
+        this.elements.conversionFromCurrency.value = fromCurrency;
+        this.elements.conversionToCurrency.value = toCurrency;
+
+        const fromAmount = Number.parseFloat(this.elements.conversionFromAmount.value);
+        const toAmount = Number.parseFloat(this.elements.conversionToAmount.value);
+
+        const needsFunding = fromCurrency !== BASE_CURRENCY;
+        this.elements.conversionFundingGroup.hidden = !needsFunding;
+        this.elements.conversionManualGroup.hidden = true;
+        this.elements.conversionAllocationsGroup.hidden = true;
+        this.elements.conversionPreviewGroup.hidden = false;
+
+        if (!needsFunding) {
+            const baseCost = Number.isFinite(fromAmount) && fromAmount > 0 ? roundMoney(fromAmount) : 0;
+            const effectiveRate = Number.isFinite(toAmount) && toAmount > 0 ? baseCost / toAmount : null;
+            this.elements.conversionCostPreview.textContent = formatMoney(baseCost, BASE_CURRENCY);
+            this.elements.conversionRatePreview.textContent =
+                effectiveRate !== null && Number.isFinite(effectiveRate) ? ` • ${roundMoney(effectiveRate)} LKR/${toCurrency}` : '';
+            this.conversionAllocationsContextKey = null;
+            return;
+        }
+
+        const method = this.elements.conversionFundingMethodSelect.value || 'allocations';
+
+        if (method === 'manual') {
+            this.elements.conversionManualGroup.hidden = false;
+            const rate = Number.parseFloat(this.elements.conversionFromRateToLkrInput.value);
+            const baseCost =
+                Number.isFinite(fromAmount) && fromAmount > 0 && Number.isFinite(rate) && rate > 0 ? roundMoney(fromAmount * rate) : 0;
+            const effectiveRate = Number.isFinite(toAmount) && toAmount > 0 ? baseCost / toAmount : null;
+
+            this.elements.conversionCostPreview.textContent = formatMoney(baseCost, BASE_CURRENCY);
+            this.elements.conversionRatePreview.textContent =
+                effectiveRate !== null && Number.isFinite(effectiveRate) ? ` • ${roundMoney(effectiveRate)} LKR/${toCurrency}` : '';
+            return;
+        }
+
+        this.elements.conversionAllocationsGroup.hidden = false;
+        const contextKey = `${person}|${fromCurrency}`;
+        const needsRebuild = this.conversionAllocationsContextKey !== contextKey;
+        this.conversionAllocationsContextKey = contextKey;
+
+        const lots = person ? this.getAvailableLots(person, fromCurrency) : [];
+        if (needsRebuild) {
+            this.renderAllocationsEditor(this.elements.conversionAllocationsContainer, lots, {});
+        }
+
+        const sources = this.readAllocationSourcesFromContainer(this.elements.conversionAllocationsContainer);
+        const sumOriginal = sources.reduce((sum, source) => sum + Number(source.amount || 0), 0);
+        const cost = this.computeSourcesLkrCost(sources);
+
+        if (cost !== null && Number.isFinite(fromAmount) && fromAmount > 0 && Math.abs(sumOriginal - fromAmount) < EPSILON) {
+            const baseCost = roundMoney(cost);
+            const effectiveRate = Number.isFinite(toAmount) && toAmount > 0 ? baseCost / toAmount : null;
+            this.elements.conversionCostPreview.textContent = formatMoney(baseCost, BASE_CURRENCY);
+            this.elements.conversionRatePreview.textContent =
+                effectiveRate !== null && Number.isFinite(effectiveRate) ? ` • ${roundMoney(effectiveRate)} LKR/${toCurrency}` : '';
+        } else {
+            this.elements.conversionCostPreview.textContent = formatMoney(0, BASE_CURRENCY);
+            this.elements.conversionRatePreview.textContent = sources.length > 0 ? ' • Allocations must match the from amount' : '';
+        }
+    },
+
+    renderHoldings() {
+        const container = this.elements.holdingsContainer;
+        if (!container) return;
+
+        if (this.conversions.length === 0) {
+            container.innerHTML = '<p class="empty-message">No holdings yet</p>';
+            return;
+        }
+
+        const used = this.computeConversionUsage();
+        const totals = new Map();
+
+        this.conversions.forEach((conversion) => {
+            const toAmount = Number(conversion?.to?.amount) || 0;
+            const remaining = Math.max(0, toAmount - (used[conversion.id] || 0));
+            if (remaining <= EPSILON) return;
+
+            const key = `${conversion.person}__${normalizeCurrency(conversion.to.currency)}`;
+            const rate = this.getConversionLotRate(conversion);
+            const lkrValue = rate === null ? 0 : remaining * rate;
+            const existing = totals.get(key) || {
+                person: conversion.person,
+                currency: normalizeCurrency(conversion.to.currency),
+                remaining: 0,
+                lkrValue: 0
+            };
+
+            existing.remaining += remaining;
+            existing.lkrValue += lkrValue;
+            totals.set(key, existing);
+        });
+
+        const rows = Array.from(totals.values())
+            .filter((row) => row.remaining > EPSILON)
+            .sort((a, b) => a.person.localeCompare(b.person) || a.currency.localeCompare(b.currency))
+            .map((row) => {
+                const effectiveRate = row.remaining > 0 ? row.lkrValue / row.remaining : 0;
+                return `
+                    <tr>
+                        <td data-label="Person:">${this.escape(row.person)}</td>
+                        <td data-label="Currency:">${this.escape(row.currency)}</td>
+                        <td data-label="Remaining:">${formatMoney(row.remaining, row.currency)}</td>
+                        <td data-label="Rate:">${row.lkrValue > 0 ? `${roundMoney(effectiveRate)} LKR/${this.escape(row.currency)}` : '-'}</td>
+                        <td data-label="Value:">${formatMoney(roundMoney(row.lkrValue), BASE_CURRENCY)}</td>
+                    </tr>
+                `;
+            })
+            .join('');
+
+        container.innerHTML =
+            rows.length === 0
+                ? '<p class="empty-message">No holdings yet</p>'
+                : `
+                    <table class="expense-table">
+                        <thead>
+                            <tr>
+                                <th>Person</th>
+                                <th>Currency</th>
+                                <th>Remaining</th>
+                                <th>Rate</th>
+                                <th>Value (LKR)</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                `;
+    },
+
+    renderConversionList() {
+        const container = this.elements.conversionListContainer;
+        if (!container) return;
+
+        if (this.conversions.length === 0) {
+            container.innerHTML = '<p class="empty-message">No conversions yet</p>';
+            return;
+        }
+
+        const used = this.computeConversionUsage();
+        const rows = this.conversions
+            .slice()
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+            .map((conversion) => {
+                const remaining = Math.max(0, (Number(conversion?.to?.amount) || 0) - (used[conversion.id] || 0));
+                const rate = this.getConversionLotRate(conversion);
+                const toCurrency = normalizeCurrency(conversion?.to?.currency);
+                const rateLabel = rate === null ? '-' : `${roundMoney(rate)} LKR/${toCurrency}`;
+                const dateLabel = conversion.createdAt ? new Date(conversion.createdAt).toLocaleString() : '-';
+                const note = conversion.note ? `<div class="text-muted text-small">${this.escape(conversion.note)}</div>` : '';
+
+                return `
+                    <tr>
+                        <td data-label="Person:">${this.escape(conversion.person)}<div class="text-muted text-small">${this.escape(dateLabel)}</div></td>
+                        <td data-label="From:">${formatMoney(conversion.from.amount, conversion.from.currency)}</td>
+                        <td data-label="To:">${formatMoney(conversion.to.amount, conversion.to.currency)}${note}</td>
+                        <td data-label="Cost:">${formatMoney(roundMoney(conversion.lkrCost), BASE_CURRENCY)}</td>
+                        <td data-label="Rate:">${this.escape(rateLabel)}</td>
+                        <td data-label="Remaining:">${formatMoney(remaining, conversion.to.currency)}</td>
+                        <td data-label="">
+                            <button class="btn-delete btn-conversion-delete" data-conv-id="${this.escape(conversion.id)}" type="button">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            })
+            .join('');
+
+        container.innerHTML = `
+            <table class="expense-table">
+                <thead>
+                    <tr>
+                        <th>Person</th>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Cost (LKR)</th>
+                        <th>Rate</th>
+                        <th>Remaining</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+
+    renderExpenseAmountCell(expense) {
+        const original = this.getExpenseOriginal(expense);
+        const base = Number(expense.amount) || 0;
+
+        if (normalizeCurrency(original.currency) === BASE_CURRENCY) {
+            return formatMoney(base, BASE_CURRENCY);
+        }
+
+        const method = expense?.fx?.method;
+        let rateLabel = '';
+        if (method === 'manual' && Number.isFinite(Number(expense?.fx?.rateToBase)) && Number(expense.fx.rateToBase) > 0) {
+            rateLabel = `${roundMoney(Number(expense.fx.rateToBase))} LKR/${normalizeCurrency(original.currency)}`;
+        } else if (original.amount > 0) {
+            rateLabel = `${roundMoney(base / original.amount)} LKR/${normalizeCurrency(original.currency)}`;
+        }
+
+        const details = Array.isArray(expense?.fx?.sources) && expense.fx.sources.length > 0 ? this.renderFxSourcesDetails(expense) : '';
+
+        return `
+            <div>${formatMoney(base, BASE_CURRENCY)}</div>
+            <div class="text-muted text-small">${formatMoney(original.amount, original.currency)} • ${this.escape(rateLabel)}</div>
+            ${details}
+        `;
+    },
+
+    renderFxSourcesDetails(expense) {
+        const original = this.getExpenseOriginal(expense);
+        const items = (expense?.fx?.sources || [])
+            .map((source) => {
+                if (!source) return null;
+                if (source.kind === 'manual') {
+                    const rate = Number(source.rateToBase);
+                    if (!Number.isFinite(rate) || rate <= 0) return null;
+                    return `<li>${formatMoney(source.amount, original.currency)} at ${roundMoney(rate)} LKR/${this.escape(original.currency)}</li>`;
+                }
+
+                if (source.kind === 'conversion') {
+                    const conversion = this.getConversionById(source.conversionId);
+                    if (!conversion) return `<li>${formatMoney(source.amount, original.currency)} from deleted conversion</li>`;
+                    const lotRate = this.getConversionLotRate(conversion);
+                    const rateLabel = lotRate === null ? '' : ` @ ${roundMoney(lotRate)} LKR/${this.escape(conversion.to.currency)}`;
+                    const label = `${formatMoney(source.amount, conversion.to.currency)} from ${formatMoney(
+                        conversion.from.amount,
+                        conversion.from.currency
+                    )} → ${formatMoney(conversion.to.amount, conversion.to.currency)}${rateLabel}`;
+                    return `<li>${this.escape(label)}</li>`;
+                }
+                return null;
+            })
+            .filter(Boolean)
+            .join('');
+
+        if (!items) return '';
+        return `
+            <details class="text-small">
+                <summary class="text-muted">Conversions</summary>
+                <ul class="fx-breakdown">${items}</ul>
+            </details>
+        `;
     },
 
     renderExpenseList() {
@@ -328,7 +1074,7 @@ const app = {
                 return `
                     <tr>
                         <td data-label="Payer:">${this.escape(expense.payer)}</td>
-                        <td data-label="Amount:">${currencyFormatter.format(expense.amount)}</td>
+                        <td data-label="Amount:">${this.renderExpenseAmountCell(expense)}</td>
                         <td data-label="Description:">${this.escape(expense.description)}</td>
                         <td data-label="For:">${this.escape(beneficiaries)}</td>
                         <td data-label="">
@@ -364,8 +1110,25 @@ const app = {
 
         this.editingIndex = index;
         this.elements.payerSelect.value = expense.payer;
-        this.elements.amountInput.value = String(expense.amount);
+
+        const original = this.getExpenseOriginal(expense);
+        this.elements.expenseCurrencyInput.value = normalizeCurrency(original.currency);
+        this.elements.amountInput.value = String(original.amount);
         this.elements.descriptionInput.value = expense.description;
+
+        if (normalizeCurrency(original.currency) !== BASE_CURRENCY) {
+            const method = expense?.fx?.method === 'allocations' ? 'allocations' : 'manual';
+            this.elements.fxMethodSelect.value = method;
+            this.elements.fxRateInput.value =
+                method === 'manual' && Number.isFinite(Number(expense?.fx?.rateToBase)) ? String(expense.fx.rateToBase) : '';
+            this.fxAllocationsContextKey = null;
+        } else {
+            this.elements.fxMethodSelect.value = 'manual';
+            this.elements.fxRateInput.value = '';
+            this.fxAllocationsContextKey = null;
+        }
+
+        this.refreshExpenseFxUI();
 
         document.querySelectorAll('.beneficiary-checkbox').forEach((checkbox) => {
             checkbox.checked = expense.for.includes(checkbox.value);
@@ -487,7 +1250,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const expense = app.expenses[index];
         if (!expense) return;
 
-        if (confirm(`Delete expense: ${expense.payer} - ${currencyFormatter.format(expense.amount)}?`)) {
+        const original = app.getExpenseOriginal(expense);
+        const originalLabel = normalizeCurrency(original.currency) === BASE_CURRENCY ? '' : ` (${formatMoney(original.amount, original.currency)})`;
+        if (confirm(`Delete expense: ${expense.payer} - ${formatMoney(expense.amount, BASE_CURRENCY)}${originalLabel}?`)) {
             app.expenses.splice(index, 1);
             app.render();
         }
@@ -523,11 +1288,37 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    const refreshExpenseFxUI = () => app.refreshExpenseFxUI();
+    app.elements.expenseCurrencyInput.addEventListener('input', refreshExpenseFxUI);
+    app.elements.payerSelect.addEventListener('change', refreshExpenseFxUI);
+    app.elements.amountInput.addEventListener('input', refreshExpenseFxUI);
+    app.elements.fxMethodSelect.addEventListener('change', refreshExpenseFxUI);
+    app.elements.fxRateInput.addEventListener('input', refreshExpenseFxUI);
+    app.elements.fxAllocationsContainer.addEventListener('input', refreshExpenseFxUI);
+
+    app.elements.fxAutoFillBtn.addEventListener('click', () => {
+        const payer = app.elements.payerSelect.value;
+        const currency = normalizeCurrency(app.elements.expenseCurrencyInput.value);
+        const originalAmount = Number.parseFloat(app.elements.amountInput.value);
+        const editingExpenseId = app.getEditingExpenseId();
+        const lots = payer ? app.getAvailableLots(payer, currency, { excludeExpenseId: editingExpenseId }) : [];
+
+        app.clearAllocations(app.elements.fxAllocationsContainer);
+        app.autoFillAllocations(app.elements.fxAllocationsContainer, lots, originalAmount);
+        app.refreshExpenseFxUI();
+    });
+
+    app.elements.fxClearAllocationsBtn.addEventListener('click', () => {
+        app.clearAllocations(app.elements.fxAllocationsContainer);
+        app.refreshExpenseFxUI();
+    });
+
     app.elements.expenseForm.addEventListener('submit', (event) => {
         event.preventDefault();
 
         const payer = app.elements.payerSelect.value;
-        const amount = app.elements.amountInput.value;
+        const currency = normalizeCurrency(app.elements.expenseCurrencyInput.value);
+        const originalAmount = Number.parseFloat(app.elements.amountInput.value);
         const description = app.elements.descriptionInput.value;
         const beneficiaries = Array.from(document.querySelectorAll('.beneficiary-checkbox:checked'), (checkbox) => checkbox.value);
 
@@ -536,7 +1327,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (!amount || Number.parseFloat(amount) <= 0) {
+        if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
             alert('Please enter a valid amount');
             return;
         }
@@ -546,8 +1337,230 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        app.addExpense(payer, amount, beneficiaries, description);
+        let baseAmount = originalAmount;
+        let fx = undefined;
+
+        const existingExpense = app.editingIndex !== null ? app.expenses[app.editingIndex] : null;
+        const expenseId = existingExpense?.id || generateId('exp');
+        const createdAt = existingExpense?.createdAt || Date.now();
+
+        if (currency !== BASE_CURRENCY) {
+            const method = app.elements.fxMethodSelect.value || 'manual';
+
+            if (method === 'manual') {
+                const rate = Number.parseFloat(app.elements.fxRateInput.value);
+                if (!Number.isFinite(rate) || rate <= 0) {
+                    alert('Please enter a valid exchange rate to LKR');
+                    return;
+                }
+                baseAmount = roundMoney(originalAmount * rate);
+                fx = { method: 'manual', rateToBase: rate, sources: [{ kind: 'manual', amount: originalAmount, rateToBase: rate }] };
+            } else if (method === 'allocations') {
+                const sources = app.readAllocationSourcesFromContainer(app.elements.fxAllocationsContainer);
+                const sumOriginal = sources.reduce((sum, source) => sum + Number(source.amount || 0), 0);
+                if (Math.abs(sumOriginal - originalAmount) >= EPSILON) {
+                    alert('Allocations must match the expense amount');
+                    return;
+                }
+
+                const lots = app.getAvailableLots(payer, currency, { excludeExpenseId: expenseId });
+                const lotMap = new Map(lots.map(({ conversion, remaining }) => [conversion.id, remaining]));
+                const requested = {};
+                for (const source of sources) {
+                    const conversion = app.getConversionById(source.conversionId);
+                    if (!conversion || conversion.person !== payer || normalizeCurrency(conversion.to.currency) !== currency) {
+                        alert('One or more allocations are invalid for this payer/currency');
+                        return;
+                    }
+                    requested[source.conversionId] = (requested[source.conversionId] || 0) + source.amount;
+                }
+
+                for (const [conversionId, requestedAmount] of Object.entries(requested)) {
+                    const available = lotMap.get(conversionId);
+                    if (!Number.isFinite(available) || requestedAmount > available + EPSILON) {
+                        alert('One or more allocations exceed remaining converted funds');
+                        return;
+                    }
+                }
+
+                const cost = app.computeSourcesLkrCost(sources);
+                if (cost === null) {
+                    alert('Failed to compute cost from allocations');
+                    return;
+                }
+                baseAmount = roundMoney(cost);
+                fx = { method: 'allocations', sources };
+            } else {
+                alert('Unsupported FX method');
+                return;
+            }
+        } else {
+            baseAmount = roundMoney(originalAmount);
+        }
+
+        const payload = {
+            id: expenseId,
+            payer,
+            amount: baseAmount,
+            original: { amount: originalAmount, currency },
+            fx,
+            for: beneficiaries,
+            description: description?.trim() || 'No description',
+            createdAt
+        };
+
+        app.upsertExpense(payload);
         app.resetExpenseForm();
+    });
+
+    const refreshConversionFundingUI = () => app.refreshConversionFundingUI();
+    app.elements.conversionPersonSelect.addEventListener('change', refreshConversionFundingUI);
+    app.elements.conversionFromCurrency.addEventListener('input', refreshConversionFundingUI);
+    app.elements.conversionToCurrency.addEventListener('input', refreshConversionFundingUI);
+    app.elements.conversionFromAmount.addEventListener('input', refreshConversionFundingUI);
+    app.elements.conversionToAmount.addEventListener('input', refreshConversionFundingUI);
+    app.elements.conversionFundingMethodSelect.addEventListener('change', refreshConversionFundingUI);
+    app.elements.conversionFromRateToLkrInput.addEventListener('input', refreshConversionFundingUI);
+    app.elements.conversionAllocationsContainer.addEventListener('input', refreshConversionFundingUI);
+
+    app.elements.conversionAutoFillBtn.addEventListener('click', () => {
+        const person = app.elements.conversionPersonSelect.value;
+        const fromCurrency = normalizeCurrency(app.elements.conversionFromCurrency.value);
+        const fromAmount = Number.parseFloat(app.elements.conversionFromAmount.value);
+        const lots = person ? app.getAvailableLots(person, fromCurrency) : [];
+
+        app.clearAllocations(app.elements.conversionAllocationsContainer);
+        app.autoFillAllocations(app.elements.conversionAllocationsContainer, lots, fromAmount);
+        app.refreshConversionFundingUI();
+    });
+
+    app.elements.conversionClearAllocationsBtn.addEventListener('click', () => {
+        app.clearAllocations(app.elements.conversionAllocationsContainer);
+        app.refreshConversionFundingUI();
+    });
+
+    app.elements.conversionForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+
+        const person = app.elements.conversionPersonSelect.value;
+        const fromCurrency = normalizeCurrency(app.elements.conversionFromCurrency.value);
+        const toCurrency = normalizeCurrency(app.elements.conversionToCurrency.value);
+        const fromAmount = Number.parseFloat(app.elements.conversionFromAmount.value);
+        const toAmount = Number.parseFloat(app.elements.conversionToAmount.value);
+        const note = app.elements.conversionNoteInput.value?.trim() || '';
+
+        if (!person) {
+            alert('Please select a person');
+            return;
+        }
+
+        if (!Number.isFinite(fromAmount) || fromAmount <= 0 || !Number.isFinite(toAmount) || toAmount <= 0) {
+            alert('Please enter valid conversion amounts');
+            return;
+        }
+
+        if (fromCurrency === toCurrency) {
+            alert('From and to currencies must be different');
+            return;
+        }
+
+        let lkrCost = 0;
+        let funding = undefined;
+
+        if (fromCurrency === BASE_CURRENCY) {
+            lkrCost = roundMoney(fromAmount);
+            funding = { method: 'base', sources: [{ kind: 'manual', amount: fromAmount, rateToBase: 1 }] };
+        } else {
+            const method = app.elements.conversionFundingMethodSelect.value || 'allocations';
+
+            if (method === 'manual') {
+                const rate = Number.parseFloat(app.elements.conversionFromRateToLkrInput.value);
+                if (!Number.isFinite(rate) || rate <= 0) {
+                    alert('Please enter a valid LKR rate for the from-currency');
+                    return;
+                }
+                lkrCost = roundMoney(fromAmount * rate);
+                funding = { method: 'manual', rateToBase: rate, sources: [{ kind: 'manual', amount: fromAmount, rateToBase: rate }] };
+            } else if (method === 'allocations') {
+                const sources = app.readAllocationSourcesFromContainer(app.elements.conversionAllocationsContainer);
+                const sumFrom = sources.reduce((sum, source) => sum + Number(source.amount || 0), 0);
+                if (Math.abs(sumFrom - fromAmount) >= EPSILON) {
+                    alert('Allocations must match the from amount');
+                    return;
+                }
+
+                const lots = app.getAvailableLots(person, fromCurrency);
+                const lotMap = new Map(lots.map(({ conversion, remaining }) => [conversion.id, remaining]));
+                const requested = {};
+                for (const source of sources) {
+                    const conversion = app.getConversionById(source.conversionId);
+                    if (!conversion || conversion.person !== person || normalizeCurrency(conversion.to.currency) !== fromCurrency) {
+                        alert('One or more allocations are invalid for this person/currency');
+                        return;
+                    }
+                    requested[source.conversionId] = (requested[source.conversionId] || 0) + source.amount;
+                }
+
+                for (const [conversionId, requestedAmount] of Object.entries(requested)) {
+                    const available = lotMap.get(conversionId);
+                    if (!Number.isFinite(available) || requestedAmount > available + EPSILON) {
+                        alert('One or more allocations exceed remaining holdings');
+                        return;
+                    }
+                }
+
+                const cost = app.computeSourcesLkrCost(sources);
+                if (cost === null) {
+                    alert('Failed to compute conversion cost from allocations');
+                    return;
+                }
+                lkrCost = roundMoney(cost);
+                funding = { method: 'allocations', sources };
+            } else {
+                alert('Unsupported funding method');
+                return;
+            }
+        }
+
+        const conversion = {
+            id: generateId('fx'),
+            person,
+            from: { amount: fromAmount, currency: fromCurrency },
+            to: { amount: toAmount, currency: toCurrency },
+            note,
+            funding,
+            lkrCost,
+            createdAt: Date.now()
+        };
+
+        app.conversions.push(conversion);
+        app.elements.conversionForm.reset();
+        app.conversionAllocationsContextKey = null;
+        app.refreshConversionFundingUI();
+        app.render();
+    });
+
+    app.elements.conversionListContainer.addEventListener('click', (event) => {
+        const deleteBtn = event.target.closest('.btn-conversion-delete');
+        if (!deleteBtn) return;
+
+        const conversionId = deleteBtn.getAttribute('data-conv-id');
+        const conversion = app.getConversionById(conversionId);
+        if (!conversion) return;
+
+        const used = app.computeConversionUsage();
+        if ((used[conversionId] || 0) > EPSILON) {
+            alert('This conversion is already used by an expense or another conversion and cannot be deleted.');
+            return;
+        }
+
+        if (!confirm(`Delete conversion: ${conversion.person} ${formatMoney(conversion.from.amount, conversion.from.currency)} → ${formatMoney(conversion.to.amount, conversion.to.currency)}?`)) {
+            return;
+        }
+
+        app.conversions = app.conversions.filter((c) => c.id !== conversionId);
+        app.pruneMissingConversionReferences();
+        app.render();
     });
 
     app.elements.smartSettlementToggle.addEventListener('change', (event) => {

@@ -315,6 +315,12 @@ select {
     margin-bottom: 16px;
 }
 
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
 .form-group label {
     display: block;
     margin-bottom: 8px;
@@ -332,6 +338,81 @@ select {
 
 .helper-actions {
     margin-bottom: 10px;
+}
+
+.allocation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.allocation-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 140px;
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: #f8fbfd;
+}
+
+.allocation-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.allocation-title {
+    font-weight: 700;
+    color: #1b3248;
+}
+
+.allocation-subtitle {
+    color: var(--muted);
+    font-size: 0.88rem;
+}
+
+.fx-preview {
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    border: 1px dashed rgba(0, 121, 107, 0.35);
+    background: rgba(0, 121, 107, 0.06);
+}
+
+.text-muted {
+    color: var(--muted);
+}
+
+.text-small {
+    font-size: 0.9rem;
+}
+
+.divider {
+    height: 1px;
+    background: rgba(15, 23, 42, 0.12);
+    margin: 22px 0;
+}
+
+.subheading {
+    color: #0e4f60;
+    font-size: 1.05rem;
+    margin: 18px 0 12px;
+    letter-spacing: -0.01em;
+}
+
+details summary {
+    cursor: pointer;
+}
+
+.fx-breakdown {
+    margin: 10px 0 0;
+    padding-left: 18px;
+}
+
+.fx-breakdown li {
+    margin: 6px 0;
+    color: #20364a;
 }
 
 .btn-helper {
@@ -546,6 +627,14 @@ select {
 
     .stats-grid,
     .home-buttons {
+        grid-template-columns: 1fr;
+    }
+
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+
+    .allocation-item {
         grid-template-columns: 1fr;
     }
 }
