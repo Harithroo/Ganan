@@ -7,11 +7,13 @@ if ('serviceWorker' in navigator) {
 }
 
 const STORAGE_KEYS = {
-    people: 'ganan_people',
-    expenses: 'ganan_expenses',
-    conversions: 'ganan_conversions',
-    smartSettlement: 'ganan_smartSettlement',
-    collectorPerson: 'ganan_collectorPerson'
+    sessions: 'ganan_sessions',
+    activeSessionId: 'ganan_activeSessionId',
+    legacyPeople: 'ganan_people',
+    legacyExpenses: 'ganan_expenses',
+    legacyConversions: 'ganan_conversions',
+    legacySmartSettlement: 'ganan_smartSettlement',
+    legacyCollectorPerson: 'ganan_collectorPerson'
 };
 
 const EPSILON = 0.01;
@@ -99,6 +101,8 @@ function closeMenu() {
 }
 
 const app = {
+    sessions: [],
+    activeSessionId: null,
     people: [],
     expenses: [],
     conversions: [],
@@ -163,7 +167,15 @@ const app = {
             conversionCostPreview: document.getElementById('conversionCostPreview'),
             conversionRatePreview: document.getElementById('conversionRatePreview'),
             holdingsContainer: document.getElementById('holdingsContainer'),
-            conversionListContainer: document.getElementById('conversionListContainer')
+            conversionListContainer: document.getElementById('conversionListContainer'),
+            sessionSelect: document.getElementById('sessionSelect'),
+            newSessionNameInput: document.getElementById('newSessionNameInput'),
+            createSessionBtn: document.getElementById('createSessionBtn'),
+            renameSessionNameInput: document.getElementById('renameSessionNameInput'),
+            renameSessionBtn: document.getElementById('renameSessionBtn'),
+            deleteSessionBtn: document.getElementById('deleteSessionBtn'),
+            sessionSummaryContainer: document.getElementById('sessionSummaryContainer'),
+            sessionMetaText: document.getElementById('sessionMetaText')
         };
     },
 
@@ -404,30 +416,219 @@ const app = {
     },
 
     save() {
-        localStorage.setItem(STORAGE_KEYS.people, JSON.stringify(this.people));
-        localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(this.expenses));
-        localStorage.setItem(STORAGE_KEYS.conversions, JSON.stringify(this.conversions));
-        localStorage.setItem(STORAGE_KEYS.smartSettlement, JSON.stringify(this.smartSettlement));
-        localStorage.setItem(STORAGE_KEYS.collectorPerson, this.collectorPerson || '');
+        this.persistActiveSessionToMemory();
+
+        const payload = {
+            version: 1,
+            sessions: this.sessions
+        };
+
+        localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(payload));
+        localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId || '');
     },
 
     load() {
         try {
-            this.people = JSON.parse(localStorage.getItem(STORAGE_KEYS.people) || '[]');
-            this.expenses = JSON.parse(localStorage.getItem(STORAGE_KEYS.expenses) || '[]');
-            this.conversions = JSON.parse(localStorage.getItem(STORAGE_KEYS.conversions) || '[]');
-            this.smartSettlement = JSON.parse(localStorage.getItem(STORAGE_KEYS.smartSettlement) || 'true');
-            this.collectorPerson = localStorage.getItem(STORAGE_KEYS.collectorPerson) || null;
+            const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.sessions) || 'null');
+            const sessions = stored && Array.isArray(stored.sessions) ? stored.sessions : [];
+            this.sessions = sessions;
+            this.activeSessionId = localStorage.getItem(STORAGE_KEYS.activeSessionId) || null;
         } catch (error) {
             console.error('Failed to load local data:', error);
-            this.people = [];
-            this.expenses = [];
-            this.conversions = [];
-            this.smartSettlement = true;
-            this.collectorPerson = null;
+            this.sessions = [];
+            this.activeSessionId = null;
         }
 
+        this.ensureDefaultSession();
+        this.loadActiveSessionData();
+    },
+
+    persistActiveSessionToMemory() {
+        if (!this.activeSessionId) return;
+        const session = this.sessions.find((item) => item.id === this.activeSessionId);
+        if (!session) return;
+
+        session.data = {
+            people: this.people,
+            expenses: this.expenses,
+            conversions: this.conversions,
+            smartSettlement: this.smartSettlement,
+            collectorPerson: this.collectorPerson
+        };
+        session.updatedAt = Date.now();
+    },
+
+    readLegacyData() {
+        const safeParse = (key, fallback) => {
+            try {
+                return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+            } catch {
+                return fallback;
+            }
+        };
+
+        const legacyPeople = safeParse(STORAGE_KEYS.legacyPeople, []);
+        const legacyExpenses = safeParse(STORAGE_KEYS.legacyExpenses, []);
+        const legacyConversions = safeParse(STORAGE_KEYS.legacyConversions, []);
+        const legacySmartSettlement = safeParse(STORAGE_KEYS.legacySmartSettlement, true);
+        const legacyCollectorPerson = localStorage.getItem(STORAGE_KEYS.legacyCollectorPerson) || null;
+
+        return {
+            people: Array.isArray(legacyPeople) ? legacyPeople : [],
+            expenses: Array.isArray(legacyExpenses) ? legacyExpenses : [],
+            conversions: Array.isArray(legacyConversions) ? legacyConversions : [],
+            smartSettlement: typeof legacySmartSettlement === 'boolean' ? legacySmartSettlement : true,
+            collectorPerson: legacyCollectorPerson || null
+        };
+    },
+
+    ensureDefaultSession() {
+        if (!Array.isArray(this.sessions)) this.sessions = [];
+
+        if (this.sessions.length === 0) {
+            const legacy = this.readLegacyData();
+            const now = Date.now();
+            const id = generateId('sess');
+            this.sessions = [
+                {
+                    id,
+                    name: 'Default',
+                    createdAt: now,
+                    updatedAt: now,
+                    data: legacy
+                }
+            ];
+            this.activeSessionId = id;
+
+            localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify({ version: 1, sessions: this.sessions }));
+            localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId);
+            return;
+        }
+
+        const activeExists = this.sessions.some((session) => session.id === this.activeSessionId);
+        if (!this.activeSessionId || !activeExists) {
+            this.activeSessionId = this.sessions[0].id;
+            localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId);
+        }
+    },
+
+    getActiveSession() {
+        if (!this.activeSessionId) return null;
+        return this.sessions.find((session) => session.id === this.activeSessionId) || null;
+    },
+
+    loadActiveSessionData() {
+        const session = this.getActiveSession();
+        const data = session?.data || {};
+
+        const clone = (value, fallback) => {
+            try {
+                return value ? JSON.parse(JSON.stringify(value)) : fallback;
+            } catch {
+                return fallback;
+            }
+        };
+
+        this.people = clone(data.people, []);
+        this.expenses = clone(data.expenses, []);
+        this.conversions = clone(data.conversions, []);
+        this.smartSettlement = typeof data.smartSettlement === 'boolean' ? data.smartSettlement : true;
+        this.collectorPerson = data.collectorPerson || null;
+
         this.migrateData();
+
+        if (this.people.length > 0 && (!this.collectorPerson || !this.people.includes(this.collectorPerson))) {
+            this.collectorPerson = this.people[0];
+        }
+
+        this.resetExpenseForm();
+        this.conversionAllocationsContextKey = null;
+        this.fxAllocationsContextKey = null;
+        this.syncSettlementControls();
+    },
+
+    syncSettlementControls() {
+        if (!this.elements?.smartSettlementToggle) return;
+
+        this.elements.smartSettlementToggle.checked = this.smartSettlement;
+        this.elements.collectorGroup.hidden = this.smartSettlement;
+        this.elements.modeIndicator.textContent = this.smartSettlement ? '(Optimized)' : '(Simple Collection)';
+
+        if (!this.smartSettlement && !this.collectorPerson && this.people.length > 0) {
+            this.collectorPerson = this.people[0];
+        }
+
+        if (this.collectorPerson) {
+            this.elements.collectorSelect.value = this.collectorPerson;
+        }
+    },
+
+    setActiveSession(sessionId) {
+        const nextId = String(sessionId || '').trim();
+        if (!nextId || nextId === this.activeSessionId) return;
+        if (!this.sessions.some((session) => session.id === nextId)) return;
+
+        this.save();
+        this.activeSessionId = nextId;
+        localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId);
+        this.loadActiveSessionData();
+        this.render();
+    },
+
+    createSession(name) {
+        const trimmed = String(name || '').trim();
+        const sessionName = trimmed || `Session ${this.sessions.length + 1}`;
+        const now = Date.now();
+        const id = generateId('sess');
+
+        this.sessions.push({
+            id,
+            name: sessionName,
+            createdAt: now,
+            updatedAt: now,
+            data: {
+                people: [],
+                expenses: [],
+                conversions: [],
+                smartSettlement: true,
+                collectorPerson: null
+            }
+        });
+
+        this.setActiveSession(id);
+    },
+
+    renameActiveSession(name) {
+        const trimmed = String(name || '').trim();
+        if (!trimmed) return;
+        const session = this.getActiveSession();
+        if (!session) return;
+        session.name = trimmed;
+        session.updatedAt = Date.now();
+        this.renderSessions();
+        this.save();
+    },
+
+    deleteActiveSession() {
+        if (this.sessions.length <= 1) {
+            alert('You must keep at least one session.');
+            return;
+        }
+
+        const session = this.getActiveSession();
+        if (!session) return;
+
+        if (!confirm(`Delete session "${session.name}"? This will remove its people, expenses, and conversions.`)) return;
+
+        const nextSessions = this.sessions.filter((item) => item.id !== session.id);
+        const nextActiveId = nextSessions[0]?.id || null;
+
+        this.sessions = nextSessions;
+        this.activeSessionId = nextActiveId;
+        localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId || '');
+
+        this.loadActiveSessionData();
+        this.render();
     },
 
     migrateData() {
@@ -541,7 +742,8 @@ const app = {
     },
 
     clearAll() {
-        if (!confirm('Are you sure you want to clear all people and expenses? This cannot be undone.')) return;
+        const sessionName = this.getActiveSession()?.name || 'current session';
+        if (!confirm(`Clear all people, expenses, and conversions in "${sessionName}"? This cannot be undone.`)) return;
 
         this.people = [];
         this.expenses = [];
@@ -567,6 +769,7 @@ const app = {
     },
 
     render() {
+        this.renderSessions();
         this.renderPeople();
         this.renderExpenseForm();
         this.renderConversionForm();
@@ -584,6 +787,52 @@ const app = {
         this.elements.statPeople.textContent = String(this.people.length);
         this.elements.statExpenses.textContent = String(this.expenses.length);
         this.elements.statTotal.textContent = currencyFormatter.format(total);
+    },
+
+    renderSessions() {
+        const select = this.elements.sessionSelect;
+        const container = this.elements.sessionSummaryContainer;
+        if (!select || !container) return;
+
+        const previousValue = select.value;
+        const options = this.sessions
+            .map((session) => `<option value="${this.escape(session.id)}">${this.escape(session.name || 'Session')}</option>`)
+            .join('');
+
+        select.innerHTML = options || '<option value="">No sessions</option>';
+        select.value = this.activeSessionId || previousValue || (this.sessions[0]?.id || '');
+
+        const active = this.getActiveSession();
+        if (!active) {
+            container.innerHTML = '<p class="empty-message">No session selected</p>';
+            return;
+        }
+
+        if (this.elements.deleteSessionBtn) {
+            this.elements.deleteSessionBtn.disabled = this.sessions.length <= 1;
+        }
+
+        const total = this.expenses.reduce((sum, expense) => sum + expense.amount, 0);
+        const createdLabel = active.createdAt ? new Date(active.createdAt).toLocaleString() : '-';
+        const updatedLabel = active.updatedAt ? new Date(active.updatedAt).toLocaleString() : '-';
+
+        container.innerHTML = `
+            <div class="stats-grid" aria-label="Session summary">
+                <div class="stat-card">
+                    <p class="stat-label">People</p>
+                    <p class="stat-value">${this.people.length}</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Expenses</p>
+                    <p class="stat-value">${this.expenses.length}</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Total (LKR)</p>
+                    <p class="stat-value">${currencyFormatter.format(total)}</p>
+                </div>
+            </div>
+            <p class="text-muted text-small">Created: ${this.escape(createdLabel)} • Updated: ${this.escape(updatedLabel)}</p>
+        `;
     },
 
     renderPeople() {
@@ -1211,10 +1460,7 @@ const app = {
 document.addEventListener('DOMContentLoaded', () => {
     app.initElements();
     app.load();
-
-    app.elements.smartSettlementToggle.checked = app.smartSettlement;
-    app.elements.collectorGroup.hidden = app.smartSettlement;
-    app.elements.modeIndicator.textContent = app.smartSettlement ? '(Optimized)' : '(Simple Collection)';
+    app.syncSettlementControls();
 
     document.querySelector('.navbar').addEventListener('click', (event) => {
         const button = event.target.closest('button[data-page]');
@@ -1229,6 +1475,42 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('hamburger').addEventListener('click', toggleMenu);
+
+    app.elements.sessionSelect.addEventListener('change', (event) => {
+        app.setActiveSession(event.target.value);
+    });
+
+    app.elements.createSessionBtn.addEventListener('click', () => {
+        const name = app.elements.newSessionNameInput.value;
+        app.elements.newSessionNameInput.value = '';
+        app.createSession(name);
+        showPage('sessions');
+    });
+
+    app.elements.newSessionNameInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            app.elements.createSessionBtn.click();
+        }
+    });
+
+    app.elements.renameSessionBtn.addEventListener('click', () => {
+        const name = app.elements.renameSessionNameInput.value;
+        app.elements.renameSessionNameInput.value = '';
+        app.renameActiveSession(name);
+    });
+
+    app.elements.renameSessionNameInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            app.elements.renameSessionBtn.click();
+        }
+    });
+
+    app.elements.deleteSessionBtn.addEventListener('click', () => {
+        app.deleteActiveSession();
+        showPage('sessions');
+    });
 
     app.elements.peopleList.addEventListener('click', (event) => {
         const button = event.target.closest('.btn-remove');

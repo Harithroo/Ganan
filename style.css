@@ -52,6 +52,12 @@ button:active {
     transform: translateY(1px);
 }
 
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
@@ -674,7 +680,7 @@ details summary {
     }
 
     .nav-items.active {
-        max-height: 320px;
+        max-height: 400px;
         padding: 6px;
     }
 

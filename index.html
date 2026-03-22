@@ -21,6 +21,7 @@
             <span></span>
         </button>
         <div class="nav-items" id="navMenu">
+            <button class="nav-btn" data-page="sessions" type="button">Sessions</button>
             <button class="nav-btn" data-page="people" type="button">People</button>
             <button class="nav-btn" data-page="add-expense" type="button">Add Expense</button>
             <button class="nav-btn" data-page="conversions" type="button">Conversions</button>
@@ -59,7 +60,7 @@
             </div>
 
             <div class="home-footer">
-                <button id="clearAllBtn" class="btn-clear" type="button">Clear All Data</button>
+                <button id="clearAllBtn" class="btn-clear" type="button">Clear Session Data</button>
             </div>
         </section>
 
@@ -70,6 +71,40 @@
                 <button id="addPersonBtn" type="button">Add Person</button>
             </div>
             <ul id="peopleList" class="list"></ul>
+        </section>
+
+        <section id="sessions" class="page">
+            <h2>Sessions</h2>
+
+            <div class="form-group">
+                <label for="sessionSelect">Current session:</label>
+                <select id="sessionSelect"></select>
+                <p class="text-muted text-small" id="sessionMetaText">Sessions keep people, expenses, and conversions separate.</p>
+            </div>
+
+            <div class="form-group">
+                <label>Create new session:</label>
+                <div class="input-group">
+                    <input type="text" id="newSessionNameInput" placeholder="e.g., Malaysia Trip" autocomplete="off" aria-label="New session name">
+                    <button id="createSessionBtn" class="btn-primary" type="button">Create</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Rename current session:</label>
+                <div class="input-group">
+                    <input type="text" id="renameSessionNameInput" placeholder="New name" autocomplete="off" aria-label="Rename session">
+                    <button id="renameSessionBtn" class="btn-helper" type="button">Rename</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <button id="deleteSessionBtn" class="btn-clear" type="button">Delete current session</button>
+            </div>
+
+            <div id="sessionSummaryContainer">
+                <p class="empty-message">No session selected</p>
+            </div>
         </section>
 
         <section id="add-expense" class="page">
