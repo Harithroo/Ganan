@@ -1,8 +1,33 @@
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').catch((err) => {
+    window.addEventListener('load', async () => {
+        try {
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (window.__gananSwReloading) return;
+                window.__gananSwReloading = true;
+                window.location.reload();
+            });
+
+            const registration = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+
+            if (registration.waiting) {
+                registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+            }
+
+            registration.addEventListener('updatefound', () => {
+                const installing = registration.installing;
+                if (!installing) return;
+                installing.addEventListener('statechange', () => {
+                    if (installing.state === 'installed' && registration.waiting) {
+                        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+                });
+            });
+
+            // Ask the browser to check for an updated service worker on each load.
+            registration.update().catch(() => {});
+        } catch (err) {
             console.error('Service Worker registration failed:', err);
-        });
+        }
     });
 }
 
