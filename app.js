@@ -32,13 +32,20 @@ if ('serviceWorker' in navigator) {
 }
 
 const STORAGE_KEYS = {
-    sessions: 'ganan_sessions',
     activeSessionId: 'ganan_activeSessionId',
     legacyPeople: 'ganan_people',
     legacyExpenses: 'ganan_expenses',
     legacyConversions: 'ganan_conversions',
     legacySmartSettlement: 'ganan_smartSettlement',
     legacyCollectorPerson: 'ganan_collectorPerson'
+};
+
+const FIREBASE_CONFIG = window.GANAN_FIREBASE_CONFIG || window.firebaseConfig || null;
+const FIRESTORE_COLLECTIONS = {
+    users: 'users',
+    sessions: 'sessions',
+    people: 'people',
+    expenses: 'expenses'
 };
 
 const EPSILON = 0.01;
@@ -126,6 +133,18 @@ function closeMenu() {
 }
 
 const app = {
+    firebaseApp: null,
+    auth: null,
+    db: null,
+    currentUser: null,
+    authReady: false,
+    syncingSession: false,
+    sessionsUnsubscribe: null,
+    activeSessionUnsubscribe: null,
+    pendingSaveTimer: null,
+    joiningSessionId: null,
+    loadingFromRemote: false,
+    latestSessionPayloadSignature: '',
     sessions: [],
     activeSessionId: null,
     people: [],
@@ -200,7 +219,20 @@ const app = {
             renameSessionBtn: document.getElementById('renameSessionBtn'),
             deleteSessionBtn: document.getElementById('deleteSessionBtn'),
             sessionSummaryContainer: document.getElementById('sessionSummaryContainer'),
-            sessionMetaText: document.getElementById('sessionMetaText')
+            sessionMetaText: document.getElementById('sessionMetaText'),
+            authStatusText: document.getElementById('authStatusText'),
+            authSignedOutView: document.getElementById('authSignedOutView'),
+            authSignedInView: document.getElementById('authSignedInView'),
+            authUserText: document.getElementById('authUserText'),
+            authEmailInput: document.getElementById('authEmailInput'),
+            authPasswordInput: document.getElementById('authPasswordInput'),
+            loginBtn: document.getElementById('loginBtn'),
+            signupBtn: document.getElementById('signupBtn'),
+            googleLoginBtn: document.getElementById('googleLoginBtn'),
+            logoutBtn: document.getElementById('logoutBtn'),
+            inviteGroup: document.getElementById('inviteGroup'),
+            inviteLinkInput: document.getElementById('inviteLinkInput'),
+            copyInviteBtn: document.getElementById('copyInviteBtn')
         };
     },
 
@@ -441,31 +473,283 @@ const app = {
     },
 
     save() {
+        if (this.loadingFromRemote) return;
         this.persistActiveSessionToMemory();
-
-        const payload = {
-            version: 1,
-            sessions: this.sessions
-        };
-
-        localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(payload));
-        localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId || '');
+        this.queueRemoteSave();
     },
 
-    load() {
-        try {
-            const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.sessions) || 'null');
-            const sessions = stored && Array.isArray(stored.sessions) ? stored.sessions : [];
-            this.sessions = sessions;
-            this.activeSessionId = localStorage.getItem(STORAGE_KEYS.activeSessionId) || null;
-        } catch (error) {
-            console.error('Failed to load local data:', error);
-            this.sessions = [];
-            this.activeSessionId = null;
+    async initFirebaseAndAuth() {
+        if (typeof firebase === 'undefined' || !FIREBASE_CONFIG) {
+            this.authReady = true;
+            this.updateAuthUI();
+            if (this.elements.authStatusText) {
+                this.elements.authStatusText.textContent = 'Firebase is not configured. Add window.GANAN_FIREBASE_CONFIG before app.js.';
+            }
+            return;
         }
 
-        this.ensureDefaultSession();
-        this.loadActiveSessionData();
+        try {
+            this.firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+            this.auth = firebase.auth();
+            this.db = firebase.firestore();
+        } catch (error) {
+            console.error('Firebase initialization failed:', error);
+            this.authReady = true;
+            this.updateAuthUI();
+            if (this.elements.authStatusText) {
+                this.elements.authStatusText.textContent = 'Failed to initialize Firebase. Check config.';
+            }
+            return;
+        }
+
+        this.auth.onAuthStateChanged(async (user) => {
+            this.currentUser = user || null;
+            this.authReady = true;
+            this.updateAuthUI();
+
+            if (!user) {
+                this.stopSessionSync();
+                this.sessions = [];
+                this.activeSessionId = null;
+                this.people = [];
+                this.expenses = [];
+                this.conversions = [];
+                this.collectorPerson = null;
+                this.render();
+                return;
+            }
+
+            await this.ensureUserProfile(user);
+
+            const inviteSessionId = this.getInviteSessionId();
+            if (inviteSessionId) {
+                await this.joinSessionByInvite(inviteSessionId);
+            }
+
+            this.startSessionSync();
+        });
+    },
+
+    updateAuthUI() {
+        const {
+            authStatusText,
+            authSignedOutView,
+            authSignedInView,
+            authUserText,
+            inviteGroup
+        } = this.elements;
+
+        const isSignedIn = !!this.currentUser;
+        if (authSignedOutView) authSignedOutView.hidden = isSignedIn;
+        if (authSignedInView) authSignedInView.hidden = !isSignedIn;
+        if (inviteGroup) inviteGroup.hidden = !isSignedIn || !this.activeSessionId;
+
+        if (!this.authReady) {
+            if (authStatusText) authStatusText.textContent = 'Loading authentication...';
+            return;
+        }
+
+        if (!isSignedIn) {
+            if (authStatusText) authStatusText.textContent = 'Sign in to sync sessions across devices and collaborators.';
+            return;
+        }
+
+        if (authStatusText) authStatusText.textContent = 'Signed in. Session data is synced with Firestore.';
+        if (authUserText) authUserText.textContent = this.currentUser.email || 'Signed in user';
+    },
+
+    async ensureUserProfile(user) {
+        if (!this.db || !user?.uid) return;
+        try {
+            await this.db.collection(FIRESTORE_COLLECTIONS.users).doc(user.uid).set(
+                {
+                    uid: user.uid,
+                    email: user.email || null,
+                    displayName: user.displayName || null,
+                    updatedAt: Date.now()
+                },
+                { merge: true }
+            );
+        } catch (error) {
+            console.error('Failed to upsert user profile:', error);
+        }
+    },
+
+    stopSessionSync() {
+        if (this.sessionsUnsubscribe) {
+            this.sessionsUnsubscribe();
+            this.sessionsUnsubscribe = null;
+        }
+        if (this.pendingSaveTimer) {
+            clearTimeout(this.pendingSaveTimer);
+            this.pendingSaveTimer = null;
+        }
+    },
+
+    startSessionSync() {
+        if (!this.db || !this.currentUser?.uid) return;
+        this.stopSessionSync();
+
+        this.sessionsUnsubscribe = this.db
+            .collection(FIRESTORE_COLLECTIONS.sessions)
+            .where('memberIds', 'array-contains', this.currentUser.uid)
+            .onSnapshot(
+                async (snapshot) => {
+                    const nextSessions = snapshot.docs
+                        .map((doc) => ({ id: doc.id, ...doc.data() }))
+                        .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+
+                    if (nextSessions.length === 0) {
+                        await this.createDefaultRemoteSession();
+                        return;
+                    }
+
+                    this.sessions = nextSessions;
+
+                    const inviteSessionId = this.getInviteSessionId();
+                    const savedActiveId = localStorage.getItem(STORAGE_KEYS.activeSessionId);
+                    const activeExists = (candidate) => candidate && this.sessions.some((session) => session.id === candidate);
+                    const nextActiveId = activeExists(this.activeSessionId)
+                        ? this.activeSessionId
+                        : activeExists(inviteSessionId)
+                        ? inviteSessionId
+                        : activeExists(savedActiveId)
+                        ? savedActiveId
+                        : this.sessions[0].id;
+
+                    if (nextActiveId !== this.activeSessionId) {
+                        this.activeSessionId = nextActiveId;
+                    }
+
+                    localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId || '');
+                    this.loadActiveSessionData();
+                    this.render();
+                },
+                (error) => {
+                    console.error('Failed to sync sessions:', error);
+                    alert('Failed to sync sessions from Firestore.');
+                }
+            );
+    },
+
+    queueRemoteSave() {
+        if (!this.db || !this.currentUser?.uid || !this.activeSessionId) return;
+
+        if (this.pendingSaveTimer) {
+            clearTimeout(this.pendingSaveTimer);
+        }
+
+        this.pendingSaveTimer = setTimeout(() => {
+            this.pendingSaveTimer = null;
+            this.flushActiveSessionToFirestore().catch((error) => {
+                console.error('Failed to save session to Firestore:', error);
+            });
+        }, 250);
+    },
+
+    getActiveSessionSignature() {
+        return JSON.stringify({
+            activeSessionId: this.activeSessionId,
+            people: this.people,
+            expenses: this.expenses,
+            conversions: this.conversions,
+            smartSettlement: this.smartSettlement,
+            collectorPerson: this.collectorPerson
+        });
+    },
+
+    async flushActiveSessionToFirestore() {
+        if (!this.db || !this.currentUser?.uid || !this.activeSessionId) return;
+        const signature = this.getActiveSessionSignature();
+        if (signature === this.latestSessionPayloadSignature) return;
+
+        const session = this.getActiveSession();
+        if (!session) return;
+
+        const memberProfiles = session.memberProfiles || {};
+        const memberIds = Array.from(new Set([...(Array.isArray(session.memberIds) ? session.memberIds : []), this.currentUser.uid]));
+        const payload = {
+            name: session.name || 'Session',
+            ownerId: session.ownerId || this.currentUser.uid,
+            memberIds,
+            memberProfiles,
+            createdAt: Number(session.createdAt) || Date.now(),
+            updatedAt: Date.now(),
+            data: {
+                people: this.people,
+                expenses: this.expenses,
+                conversions: this.conversions,
+                smartSettlement: this.smartSettlement,
+                collectorPerson: this.collectorPerson
+            }
+        };
+
+        await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(this.activeSessionId).set(payload, { merge: true });
+        await this.syncSessionScopedCollections(this.activeSessionId, payload.data, memberProfiles);
+        this.latestSessionPayloadSignature = signature;
+    },
+
+    async syncSessionScopedCollections(sessionId, data, memberProfiles) {
+        if (!this.db || !sessionId) return;
+
+        const reverseMemberMap = new Map();
+        Object.entries(memberProfiles || {}).forEach(([uid, personName]) => {
+            if (!personName) return;
+            reverseMemberMap.set(String(personName), uid);
+        });
+
+        const peopleSnapshot = await this.db.collection(FIRESTORE_COLLECTIONS.people).where('sessionId', '==', sessionId).get();
+        const peopleById = new Map(peopleSnapshot.docs.map((doc) => [doc.id, doc]));
+        const desiredPeopleIds = new Set();
+        const peopleBatch = this.db.batch();
+
+        (data.people || []).forEach((personName) => {
+            const docId = `${sessionId}__${encodeURIComponent(String(personName)).slice(0, 120)}`;
+            desiredPeopleIds.add(docId);
+            peopleBatch.set(
+                this.db.collection(FIRESTORE_COLLECTIONS.people).doc(docId),
+                {
+                    sessionId,
+                    name: personName,
+                    linkedUserId: reverseMemberMap.get(String(personName)) || null,
+                    updatedAt: Date.now()
+                },
+                { merge: true }
+            );
+        });
+
+        peopleById.forEach((doc, docId) => {
+            if (!desiredPeopleIds.has(docId)) {
+                peopleBatch.delete(doc.ref);
+            }
+        });
+        await peopleBatch.commit();
+
+        const expenseSnapshot = await this.db.collection(FIRESTORE_COLLECTIONS.expenses).where('sessionId', '==', sessionId).get();
+        const expenseById = new Map(expenseSnapshot.docs.map((doc) => [doc.id, doc]));
+        const desiredExpenseIds = new Set();
+        const expenseBatch = this.db.batch();
+
+        (data.expenses || []).forEach((expense) => {
+            if (!expense?.id) return;
+            desiredExpenseIds.add(expense.id);
+            expenseBatch.set(
+                this.db.collection(FIRESTORE_COLLECTIONS.expenses).doc(expense.id),
+                {
+                    ...expense,
+                    sessionId,
+                    updatedAt: Date.now()
+                },
+                { merge: true }
+            );
+        });
+
+        expenseById.forEach((doc, docId) => {
+            if (!desiredExpenseIds.has(docId)) {
+                expenseBatch.delete(doc.ref);
+            }
+        });
+        await expenseBatch.commit();
     },
 
     persistActiveSessionToMemory() {
@@ -507,34 +791,169 @@ const app = {
         };
     },
 
-    ensureDefaultSession() {
-        if (!Array.isArray(this.sessions)) this.sessions = [];
+    async createDefaultRemoteSession() {
+        if (!this.db || !this.currentUser?.uid) return;
+        const legacy = this.readLegacyData();
+        const now = Date.now();
+        const id = generateId('sess');
 
-        if (this.sessions.length === 0) {
-            const legacy = this.readLegacyData();
-            const now = Date.now();
-            const id = generateId('sess');
-            this.sessions = [
+        await this.db
+            .collection(FIRESTORE_COLLECTIONS.sessions)
+            .doc(id)
+            .set({
+                name: 'Default',
+                ownerId: this.currentUser.uid,
+                memberIds: [this.currentUser.uid],
+                memberProfiles: {},
+                createdAt: now,
+                updatedAt: now,
+                data: legacy
+            });
+
+        localStorage.setItem(STORAGE_KEYS.activeSessionId, id);
+    },
+
+    getInviteSessionId() {
+        const params = new URLSearchParams(window.location.search);
+        const inviteSessionId = params.get('session');
+        return inviteSessionId ? String(inviteSessionId).trim() : null;
+    },
+
+    async joinSessionByInvite(sessionId) {
+        if (!this.db || !this.currentUser?.uid || !sessionId || this.joiningSessionId === sessionId) return;
+        this.joiningSessionId = sessionId;
+
+        try {
+            const ref = this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(sessionId);
+            const snapshot = await ref.get();
+            if (!snapshot.exists) {
+                alert('Invite link is invalid or session no longer exists.');
+                return;
+            }
+
+            const session = snapshot.data() || {};
+            const memberIds = Array.isArray(session.memberIds) ? session.memberIds : [];
+            const memberProfiles = session.memberProfiles && typeof session.memberProfiles === 'object' ? session.memberProfiles : {};
+
+            if (memberIds.includes(this.currentUser.uid)) {
+                this.activeSessionId = sessionId;
+                localStorage.setItem(STORAGE_KEYS.activeSessionId, sessionId);
+                return;
+            }
+
+            const sessionData = session.data && typeof session.data === 'object' ? session.data : {};
+            const sessionPeople = Array.isArray(sessionData.people) ? sessionData.people.map((name) => String(name).trim()).filter(Boolean) : [];
+
+            const linkedPerson = this.promptForPersonLink(sessionPeople);
+            if (!linkedPerson) {
+                alert('Joining cancelled.');
+                return;
+            }
+
+            if (!sessionPeople.includes(linkedPerson)) {
+                sessionPeople.push(linkedPerson);
+            }
+
+            memberProfiles[this.currentUser.uid] = linkedPerson;
+
+            await ref.set(
                 {
-                    id,
-                    name: 'Default',
-                    createdAt: now,
-                    updatedAt: now,
-                    data: legacy
-                }
-            ];
-            this.activeSessionId = id;
+                    memberIds: firebase.firestore.FieldValue.arrayUnion(this.currentUser.uid),
+                    memberProfiles,
+                    updatedAt: Date.now(),
+                    data: {
+                        ...sessionData,
+                        people: sessionPeople
+                    }
+                },
+                { merge: true }
+            );
 
-            localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify({ version: 1, sessions: this.sessions }));
-            localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId);
+            this.activeSessionId = sessionId;
+            localStorage.setItem(STORAGE_KEYS.activeSessionId, sessionId);
+        } catch (error) {
+            console.error('Failed to join invited session:', error);
+            alert('Failed to join the session.');
+        } finally {
+            this.joiningSessionId = null;
+        }
+    },
+
+    promptForPersonLink(existingPeople) {
+        const cleanPeople = Array.isArray(existingPeople) ? existingPeople.filter(Boolean) : [];
+        if (cleanPeople.length === 0) {
+            const createdName = prompt('No people in this session yet. Enter your name to join:');
+            return String(createdName || '').trim() || null;
+        }
+
+        const list = cleanPeople.map((name, index) => `${index + 1}. ${name}`).join('\n');
+        const response = prompt(
+            `Join as which person?\n${list}\n\nType a number from the list, or type a new name to create another person:`,
+            cleanPeople[0]
+        );
+        const trimmed = String(response || '').trim();
+        if (!trimmed) return null;
+
+        const index = Number(trimmed);
+        if (Number.isFinite(index) && index >= 1 && index <= cleanPeople.length) {
+            return cleanPeople[index - 1];
+        }
+        return trimmed;
+    },
+
+    getInviteLinkForActiveSession() {
+        if (!this.activeSessionId) return '';
+        const url = new URL(window.location.href);
+        url.searchParams.set('session', this.activeSessionId);
+        return url.toString();
+    },
+
+    async copyInviteLink() {
+        const inviteLink = this.getInviteLinkForActiveSession();
+        if (!inviteLink) return;
+
+        try {
+            await navigator.clipboard.writeText(inviteLink);
+            alert('Invite link copied.');
+        } catch {
+            if (this.elements.inviteLinkInput) {
+                this.elements.inviteLinkInput.focus();
+                this.elements.inviteLinkInput.select();
+            }
+        }
+    },
+
+    async signUpWithEmail() {
+        if (!this.auth) return;
+        const email = this.elements.authEmailInput?.value?.trim();
+        const password = this.elements.authPasswordInput?.value || '';
+        if (!email || !password) {
+            alert('Enter email and password.');
             return;
         }
+        await this.auth.createUserWithEmailAndPassword(email, password);
+    },
 
-        const activeExists = this.sessions.some((session) => session.id === this.activeSessionId);
-        if (!this.activeSessionId || !activeExists) {
-            this.activeSessionId = this.sessions[0].id;
-            localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId);
+    async loginWithEmail() {
+        if (!this.auth) return;
+        const email = this.elements.authEmailInput?.value?.trim();
+        const password = this.elements.authPasswordInput?.value || '';
+        if (!email || !password) {
+            alert('Enter email and password.');
+            return;
         }
+        await this.auth.signInWithEmailAndPassword(email, password);
+    },
+
+    async loginWithGoogle() {
+        if (!this.auth) return;
+        const provider = new firebase.auth.GoogleAuthProvider();
+        await this.auth.signInWithPopup(provider);
+    },
+
+    async logout() {
+        if (!this.auth) return;
+        await this.auth.signOut();
     },
 
     getActiveSession() {
@@ -559,6 +978,7 @@ const app = {
         this.conversions = clone(data.conversions, []);
         this.smartSettlement = typeof data.smartSettlement === 'boolean' ? data.smartSettlement : true;
         this.collectorPerson = data.collectorPerson || null;
+        this.latestSessionPayloadSignature = this.getActiveSessionSignature();
 
         this.migrateData();
 
@@ -593,67 +1013,76 @@ const app = {
         if (!nextId || nextId === this.activeSessionId) return;
         if (!this.sessions.some((session) => session.id === nextId)) return;
 
-        this.save();
         this.activeSessionId = nextId;
         localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId);
         this.loadActiveSessionData();
         this.render();
     },
 
-    createSession(name) {
+    async createSession(name) {
+        if (!this.db || !this.currentUser?.uid) {
+            alert('Please sign in first.');
+            return;
+        }
+
         const trimmed = String(name || '').trim();
         const sessionName = trimmed || `Session ${this.sessions.length + 1}`;
         const now = Date.now();
         const id = generateId('sess');
 
-        this.sessions.push({
-            id,
-            name: sessionName,
-            createdAt: now,
-            updatedAt: now,
-            data: {
-                people: [],
-                expenses: [],
-                conversions: [],
-                smartSettlement: true,
-                collectorPerson: null
-            }
-        });
+        await this.db
+            .collection(FIRESTORE_COLLECTIONS.sessions)
+            .doc(id)
+            .set({
+                name: sessionName,
+                ownerId: this.currentUser.uid,
+                memberIds: [this.currentUser.uid],
+                memberProfiles: {},
+                createdAt: now,
+                updatedAt: now,
+                data: {
+                    people: [],
+                    expenses: [],
+                    conversions: [],
+                    smartSettlement: true,
+                    collectorPerson: null
+                }
+            });
 
-        this.setActiveSession(id);
+        this.activeSessionId = id;
+        localStorage.setItem(STORAGE_KEYS.activeSessionId, id);
     },
 
-    renameActiveSession(name) {
+    async renameActiveSession(name) {
         const trimmed = String(name || '').trim();
         if (!trimmed) return;
         const session = this.getActiveSession();
-        if (!session) return;
-        session.name = trimmed;
-        session.updatedAt = Date.now();
-        this.renderSessions();
-        this.save();
+        if (!session || !this.db) return;
+        await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(session.id).set({ name: trimmed, updatedAt: Date.now() }, { merge: true });
     },
 
-    deleteActiveSession() {
+    async deleteActiveSession() {
         if (this.sessions.length <= 1) {
             alert('You must keep at least one session.');
             return;
         }
 
         const session = this.getActiveSession();
-        if (!session) return;
+        if (!session || !this.db) return;
 
         if (!confirm(`Delete session "${session.name}"? This will remove its people, expenses, and conversions.`)) return;
 
-        const nextSessions = this.sessions.filter((item) => item.id !== session.id);
-        const nextActiveId = nextSessions[0]?.id || null;
+        await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(session.id).delete();
 
-        this.sessions = nextSessions;
-        this.activeSessionId = nextActiveId;
-        localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId || '');
+        const peopleSnapshot = await this.db.collection(FIRESTORE_COLLECTIONS.people).where('sessionId', '==', session.id).get();
+        const peopleBatch = this.db.batch();
+        peopleSnapshot.forEach((doc) => peopleBatch.delete(doc.ref));
+        await peopleBatch.commit();
 
-        this.loadActiveSessionData();
-        this.render();
+        const expenseSnapshot = await this.db.collection(FIRESTORE_COLLECTIONS.expenses).where('sessionId', '==', session.id).get();
+        const expenseBatch = this.db.batch();
+        expenseSnapshot.forEach((doc) => expenseBatch.delete(doc.ref));
+        await expenseBatch.commit();
     },
 
     migrateData() {
@@ -794,6 +1223,7 @@ const app = {
     },
 
     render() {
+        this.updateAuthUI();
         this.renderSessions();
         this.renderPeople();
         this.renderExpenseForm();
@@ -830,16 +1260,24 @@ const app = {
         const active = this.getActiveSession();
         if (!active) {
             container.innerHTML = '<p class="empty-message">No session selected</p>';
+            if (this.elements.inviteGroup) this.elements.inviteGroup.hidden = true;
             return;
         }
 
         if (this.elements.deleteSessionBtn) {
             this.elements.deleteSessionBtn.disabled = this.sessions.length <= 1;
         }
+        if (this.elements.inviteGroup) {
+            this.elements.inviteGroup.hidden = !this.currentUser;
+        }
+        if (this.elements.inviteLinkInput) {
+            this.elements.inviteLinkInput.value = this.getInviteLinkForActiveSession();
+        }
 
         const total = this.expenses.reduce((sum, expense) => sum + expense.amount, 0);
         const createdLabel = active.createdAt ? new Date(active.createdAt).toLocaleString() : '-';
         const updatedLabel = active.updatedAt ? new Date(active.updatedAt).toLocaleString() : '-';
+        const memberCount = Array.isArray(active.memberIds) ? active.memberIds.length : 0;
 
         container.innerHTML = `
             <div class="stats-grid" aria-label="Session summary">
@@ -854,6 +1292,10 @@ const app = {
                 <div class="stat-card">
                     <p class="stat-label">Total (LKR)</p>
                     <p class="stat-value">${currencyFormatter.format(total)}</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Members</p>
+                    <p class="stat-value">${memberCount}</p>
                 </div>
             </div>
             <p class="text-muted text-small">Created: ${this.escape(createdLabel)} • Updated: ${this.escape(updatedLabel)}</p>
@@ -1484,7 +1926,7 @@ const app = {
 
 document.addEventListener('DOMContentLoaded', () => {
     app.initElements();
-    app.load();
+    app.initFirebaseAndAuth();
     app.syncSettlementControls();
 
     document.querySelector('.navbar').addEventListener('click', (event) => {
@@ -1505,10 +1947,15 @@ document.addEventListener('DOMContentLoaded', () => {
         app.setActiveSession(event.target.value);
     });
 
-    app.elements.createSessionBtn.addEventListener('click', () => {
+    app.elements.createSessionBtn.addEventListener('click', async () => {
         const name = app.elements.newSessionNameInput.value;
         app.elements.newSessionNameInput.value = '';
-        app.createSession(name);
+        try {
+            await app.createSession(name);
+        } catch (error) {
+            console.error('Failed to create session:', error);
+            alert('Failed to create session.');
+        }
         showPage('sessions');
     });
 
@@ -1519,10 +1966,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    app.elements.renameSessionBtn.addEventListener('click', () => {
+    app.elements.renameSessionBtn.addEventListener('click', async () => {
         const name = app.elements.renameSessionNameInput.value;
         app.elements.renameSessionNameInput.value = '';
-        app.renameActiveSession(name);
+        try {
+            await app.renameActiveSession(name);
+        } catch (error) {
+            console.error('Failed to rename session:', error);
+            alert('Failed to rename session.');
+        }
     });
 
     app.elements.renameSessionNameInput.addEventListener('keydown', (event) => {
@@ -1532,9 +1984,61 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    app.elements.deleteSessionBtn.addEventListener('click', () => {
-        app.deleteActiveSession();
+    app.elements.deleteSessionBtn.addEventListener('click', async () => {
+        try {
+            await app.deleteActiveSession();
+        } catch (error) {
+            console.error('Failed to delete session:', error);
+            alert('Failed to delete session.');
+        }
         showPage('sessions');
+    });
+
+    app.elements.copyInviteBtn?.addEventListener('click', () => {
+        app.copyInviteLink();
+    });
+
+    app.elements.loginBtn?.addEventListener('click', async () => {
+        try {
+            await app.loginWithEmail();
+        } catch (error) {
+            console.error('Login failed:', error);
+            alert(error?.message || 'Login failed');
+        }
+    });
+
+    app.elements.signupBtn?.addEventListener('click', async () => {
+        try {
+            await app.signUpWithEmail();
+        } catch (error) {
+            console.error('Sign up failed:', error);
+            alert(error?.message || 'Sign up failed');
+        }
+    });
+
+    app.elements.googleLoginBtn?.addEventListener('click', async () => {
+        try {
+            await app.loginWithGoogle();
+        } catch (error) {
+            console.error('Google sign-in failed:', error);
+            alert(error?.message || 'Google sign-in failed');
+        }
+    });
+
+    app.elements.logoutBtn?.addEventListener('click', async () => {
+        try {
+            await app.logout();
+        } catch (error) {
+            console.error('Logout failed:', error);
+            alert(error?.message || 'Logout failed');
+        }
+    });
+
+    app.elements.authPasswordInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            app.elements.loginBtn?.click();
+        }
     });
 
     app.elements.peopleList.addEventListener('click', (event) => {

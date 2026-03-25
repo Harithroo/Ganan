@@ -259,6 +259,14 @@ h2 {
     margin-top: 28px;
 }
 
+.auth-card {
+    margin: 18px 0;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: linear-gradient(180deg, #f6fbfb, #ffffff);
+}
+
 .btn-clear {
     padding: 10px 16px;
     background: var(--danger);
