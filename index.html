@@ -36,6 +36,26 @@
             <h1>Ganan</h1>
             <p class="subtitle">Group Expense Splitter</p>
             <p class="welcome-text">Track shared costs, split fairly, and settle with fewer transfers.</p>
+            <div id="authCard" class="auth-card">
+                <p class="text-muted text-small" id="authStatusText">Sign in to sync sessions</p>
+                <div id="authSignedOutView">
+                    <div class="form-group">
+                        <input type="email" id="authEmailInput" placeholder="Email" autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="authPasswordInput" placeholder="Password" autocomplete="current-password">
+                    </div>
+                    <div class="helper-actions">
+                        <button id="loginBtn" type="button" class="btn-helper">Log in</button>
+                        <button id="signupBtn" type="button" class="btn-helper">Sign up</button>
+                        <button id="googleLoginBtn" type="button" class="btn-helper">Google</button>
+                    </div>
+                </div>
+                <div id="authSignedInView" hidden>
+                    <p class="text-small" id="authUserText"></p>
+                    <button id="logoutBtn" type="button" class="btn-helper">Log out</button>
+                </div>
+            </div>
 
             <div class="stats-grid" id="homeStats" aria-label="Summary">
                 <div class="stat-card">
@@ -80,6 +100,13 @@
                 <label for="sessionSelect">Current session:</label>
                 <select id="sessionSelect"></select>
                 <p class="text-muted text-small" id="sessionMetaText">Sessions keep people, expenses, and conversions separate.</p>
+            </div>
+            <div class="form-group" id="inviteGroup" hidden>
+                <label for="inviteLinkInput">Invite link:</label>
+                <div class="input-group">
+                    <input type="text" id="inviteLinkInput" readonly>
+                    <button id="copyInviteBtn" class="btn-helper" type="button">Copy</button>
+                </div>
             </div>
 
             <div class="form-group">
@@ -320,6 +347,10 @@
         <option value="INR"></option>
     </datalist>
 
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
