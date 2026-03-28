@@ -2274,10 +2274,17 @@ document.addEventListener('DOMContentLoaded', () => {
             await app.loginWithGoogle();
         } catch (error) {
             console.error('Google sign-in failed:', error);
+            if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+                return;
+            }
             if (error?.code === 'auth/unauthorized-domain') {
                 alert(
                     'This domain is not authorized for Google sign-in. In Firebase Console > Authentication > Settings > Authorized domains, add this host.'
                 );
+                return;
+            }
+            if (error?.code === 'auth/api-key-not-valid') {
+                alert('Firebase API key is blocked for this domain. Update API key HTTP referrer restrictions in Google Cloud Console.');
                 return;
             }
             alert(error?.message || 'Google sign-in failed');
