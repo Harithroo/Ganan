@@ -544,6 +544,12 @@ details summary {
     background: #0f6b7d;
 }
 
+.member-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .checkbox-group {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

@@ -223,6 +223,8 @@ const app = {
             renameSessionBtn: document.getElementById('renameSessionBtn'),
             deleteSessionBtn: document.getElementById('deleteSessionBtn'),
             sessionSummaryContainer: document.getElementById('sessionSummaryContainer'),
+            memberManagementGroup: document.getElementById('memberManagementGroup'),
+            memberListContainer: document.getElementById('memberListContainer'),
             sessionMetaText: document.getElementById('sessionMetaText'),
             authStatusText: document.getElementById('authStatusText'),
             authSignedOutView: document.getElementById('authSignedOutView'),
@@ -273,6 +275,59 @@ const app = {
 
         if (this.collectorPerson === name) {
             this.collectorPerson = this.people[0] || null;
+        }
+
+        this.render();
+    },
+
+    renamePersonReferences(oldName, newName) {
+        const previous = String(oldName || '').trim();
+        const next = String(newName || '').trim();
+        if (!previous || !next || previous === next) return false;
+        if (!this.people.includes(previous) || this.people.includes(next)) return false;
+
+        this.people = this.people.map((person) => (person === previous ? next : person));
+        this.expenses = this.expenses.map((expense) => ({
+            ...expense,
+            payer: expense.payer === previous ? next : expense.payer,
+            for: Array.isArray(expense.for) ? expense.for.map((beneficiary) => (beneficiary === previous ? next : beneficiary)) : []
+        }));
+        this.conversions = this.conversions.map((conversion) => ({
+            ...conversion,
+            person: conversion.person === previous ? next : conversion.person
+        }));
+
+        if (this.collectorPerson === previous) {
+            this.collectorPerson = next;
+        }
+
+        return true;
+    },
+
+    renamePerson(name) {
+        const current = String(name || '').trim();
+        if (!current || !this.people.includes(current)) return;
+
+        const response = prompt('Enter the new name:', current);
+        const next = String(response || '').trim();
+        if (!next || next === current) return;
+        if (this.people.includes(next)) {
+            alert(`"${next}" already exists.`);
+            return;
+        }
+
+        const renamed = this.renamePersonReferences(current, next);
+        if (!renamed) return;
+
+        const session = this.getActiveSession();
+        if (session?.memberProfiles && typeof session.memberProfiles === 'object') {
+            const updatedProfiles = { ...session.memberProfiles };
+            Object.keys(updatedProfiles).forEach((uid) => {
+                if (updatedProfiles[uid] === current) {
+                    updatedProfiles[uid] = next;
+                }
+            });
+            session.memberProfiles = updatedProfiles;
         }
 
         this.render();
@@ -1027,6 +1082,18 @@ const app = {
         return inviteSessionId ? String(inviteSessionId).trim() : null;
     },
 
+    clearInviteSessionIdFromUrl() {
+        try {
+            const url = new URL(window.location.href);
+            if (!url.searchParams.has('session')) return;
+            url.searchParams.delete('session');
+            const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+            window.history.replaceState({}, '', nextUrl);
+        } catch (error) {
+            console.warn('Failed to clear invite session from URL:', error);
+        }
+    },
+
     async joinSessionByInvite(sessionId) {
         if (!this.db || !this.currentUser?.uid || !sessionId || this.joiningSessionId === sessionId) return;
         this.joiningSessionId = sessionId;
@@ -1046,15 +1113,17 @@ const app = {
             if (memberIds.includes(this.currentUser.uid)) {
                 this.activeSessionId = sessionId;
                 this.writeActiveSessionId(sessionId, 'remote');
+                this.clearInviteSessionIdFromUrl();
                 return;
             }
 
             const sessionData = session.data && typeof session.data === 'object' ? session.data : {};
             const sessionPeople = Array.isArray(sessionData.people) ? sessionData.people.map((name) => String(name).trim()).filter(Boolean) : [];
+            const fallbackMemberName = this.getInviteMemberName(sessionPeople);
 
-            const linkedPerson = this.promptForPersonLink(sessionPeople);
+            const linkedPerson = this.promptForPersonLink(sessionPeople) || fallbackMemberName;
             if (!linkedPerson) {
-                alert('Joining cancelled.');
+                alert('Joining cancelled. Could not determine a member name for this account.');
                 return;
             }
 
@@ -1079,26 +1148,168 @@ const app = {
 
             this.activeSessionId = sessionId;
             this.writeActiveSessionId(sessionId, 'remote');
+            this.clearInviteSessionIdFromUrl();
+            alert(`Joined session as "${linkedPerson}".`);
         } catch (error) {
             console.error('Failed to join invited session:', error);
-            alert('Failed to join the session.');
+            const code = error?.code ? ` (${error.code})` : '';
+            const message = error?.message ? `\n${error.message}` : '';
+            alert(`Failed to join the session${code}.${message}`);
         } finally {
             this.joiningSessionId = null;
         }
     },
 
-    promptForPersonLink(existingPeople) {
-        const cleanPeople = Array.isArray(existingPeople) ? existingPeople.filter(Boolean) : [];
-        if (cleanPeople.length === 0) {
-            const createdName = prompt('No people in this session yet. Enter your name to join:');
-            return String(createdName || '').trim() || null;
+    getInviteMemberName(existingPeople) {
+        const taken = new Set((Array.isArray(existingPeople) ? existingPeople : []).map((name) => String(name).trim()).filter(Boolean));
+        const candidates = [
+            String(this.currentUser?.displayName || '').trim(),
+            String(this.currentUser?.email || '').split('@')[0].trim(),
+            'Member'
+        ].filter(Boolean);
+
+        for (const candidate of candidates) {
+            if (!taken.has(candidate)) return candidate;
         }
 
+        let index = 2;
+        while (taken.has(`Member ${index}`)) {
+            index += 1;
+        }
+        return `Member ${index}`;
+    },
+
+    getActiveSessionDataPayload() {
+        return {
+            people: this.people,
+            expenses: this.expenses,
+            conversions: this.conversions,
+            smartSettlement: this.smartSettlement,
+            collectorPerson: this.collectorPerson
+        };
+    },
+
+    getSessionMemberDisplayName(uid, session) {
+        const profileName = String(session?.memberProfiles?.[uid] || '').trim();
+        if (profileName) return profileName;
+        if (uid === this.currentUser?.uid) {
+            const display = String(this.currentUser?.displayName || '').trim();
+            if (display) return display;
+            const emailName = String(this.currentUser?.email || '').split('@')[0].trim();
+            if (emailName) return emailName;
+            return 'You';
+        }
+        return `Member ${String(uid || '').slice(0, 6)}`;
+    },
+
+    async renameSessionMember(uid) {
+        const memberUid = String(uid || '').trim();
+        const session = this.getActiveSession();
+        if (!this.db || !this.currentUser?.uid || !session || !memberUid) return;
+
+        const isOwner = session.ownerId === this.currentUser.uid;
+        const isSelf = memberUid === this.currentUser.uid;
+        if (!isOwner && !isSelf) {
+            alert('Only the host can rename other members.');
+            return;
+        }
+
+        const previousName = this.getSessionMemberDisplayName(memberUid, session);
+        const response = prompt('Enter the new member name:', previousName);
+        const nextName = String(response || '').trim();
+        if (!nextName || nextName === previousName) return;
+
+        if (this.people.includes(nextName) && !this.people.includes(previousName)) {
+            alert(`"${nextName}" already exists.`);
+            return;
+        }
+
+        const updatedProfiles = {
+            ...(session.memberProfiles && typeof session.memberProfiles === 'object' ? session.memberProfiles : {})
+        };
+        updatedProfiles[memberUid] = nextName;
+
+        if (this.people.includes(previousName) && previousName !== nextName) {
+            const renamed = this.renamePersonReferences(previousName, nextName);
+            if (!renamed) {
+                alert('Could not rename this member because that target name already exists.');
+                return;
+            }
+        } else if (!this.people.includes(nextName)) {
+            this.people.push(nextName);
+        }
+
+        session.memberProfiles = updatedProfiles;
+        const payloadData = this.getActiveSessionDataPayload();
+
+        await this.db
+            .collection(FIRESTORE_COLLECTIONS.sessions)
+            .doc(session.id)
+            .set(
+                {
+                    memberProfiles: updatedProfiles,
+                    updatedAt: Date.now(),
+                    data: payloadData
+                },
+                { merge: true }
+            );
+
+        await this.syncSessionScopedCollections(session.id, payloadData, updatedProfiles);
+        this.latestSessionPayloadSignature = this.getActiveSessionSignature();
+        this.render();
+        alert(`Renamed member to "${nextName}".`);
+    },
+
+    async removeSessionMember(uid) {
+        const memberUid = String(uid || '').trim();
+        const session = this.getActiveSession();
+        if (!this.db || !this.currentUser?.uid || !session || !memberUid) return;
+
+        if (session.ownerId !== this.currentUser.uid) {
+            alert('Only the host can remove members.');
+            return;
+        }
+        if (memberUid === session.ownerId) {
+            alert('Host account cannot be removed.');
+            return;
+        }
+
+        const memberName = this.getSessionMemberDisplayName(memberUid, session);
+        if (!confirm(`Remove "${memberName}" from this session? Their account access will be removed, but all session data will remain.`)) return;
+
+        const existingIds = Array.isArray(session.memberIds) ? session.memberIds : [];
+        const nextMemberIds = existingIds.filter((item) => item !== memberUid);
+        const updatedProfiles = {
+            ...(session.memberProfiles && typeof session.memberProfiles === 'object' ? session.memberProfiles : {})
+        };
+        delete updatedProfiles[memberUid];
+
+        session.memberIds = nextMemberIds;
+        session.memberProfiles = updatedProfiles;
+
+        await this.db
+            .collection(FIRESTORE_COLLECTIONS.sessions)
+            .doc(session.id)
+            .set(
+                {
+                    memberIds: nextMemberIds,
+                    memberProfiles: updatedProfiles,
+                    updatedAt: Date.now()
+                },
+                { merge: true }
+            );
+
+        await this.syncSessionScopedCollections(session.id, this.getActiveSessionDataPayload(), updatedProfiles);
+        this.render();
+        alert(`Removed "${memberName}" from the session.`);
+    },
+
+    promptForPersonLink(existingPeople) {
+        const cleanPeople = Array.isArray(existingPeople) ? existingPeople.filter(Boolean) : [];
+        if (cleanPeople.length === 0) return null;
+
         const list = cleanPeople.map((name, index) => `${index + 1}. ${name}`).join('\n');
-        const response = prompt(
-            `Join as which person?\n${list}\n\nType a number from the list, or type a new name to create another person:`,
-            cleanPeople[0]
-        );
+        const response = prompt(`Join as which person?\n${list}\n\nType a number from the list, or type a new name to create another person:`, cleanPeople[0]);
         const trimmed = String(response || '').trim();
         if (!trimmed) return null;
 
@@ -1112,6 +1323,7 @@ const app = {
     getInviteLinkForActiveSession() {
         if (!this.activeSessionId) return '';
         const url = new URL(window.location.href);
+        url.searchParams.delete('session');
         url.searchParams.set('session', this.activeSessionId);
         return url.toString();
     },
@@ -1123,12 +1335,32 @@ const app = {
         try {
             await navigator.clipboard.writeText(inviteLink);
             alert('Invite link copied.');
-        } catch {
-            if (this.elements.inviteLinkInput) {
-                this.elements.inviteLinkInput.focus();
-                this.elements.inviteLinkInput.select();
-            }
+            return;
+        } catch {}
+
+        const input = this.elements.inviteLinkInput;
+        if (!input) {
+            alert(`Copy failed. Share this link manually:\n${inviteLink}`);
+            return;
         }
+
+        input.value = inviteLink;
+        input.focus();
+        input.select();
+
+        let copied = false;
+        try {
+            copied = document.execCommand('copy');
+        } catch {
+            copied = false;
+        }
+
+        if (copied) {
+            alert('Invite link copied.');
+            return;
+        }
+
+        alert(`Copy failed on this browser. Share this link manually:\n${inviteLink}`);
     },
 
     async signUpWithEmail() {
@@ -1318,8 +1550,6 @@ const app = {
             return;
         }
 
-        await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(session.id).delete();
-
         const peopleSnapshot = await this.db.collection(FIRESTORE_COLLECTIONS.people).where('sessionId', '==', session.id).get();
         const peopleBatch = this.db.batch();
         peopleSnapshot.forEach((doc) => peopleBatch.delete(doc.ref));
@@ -1329,6 +1559,8 @@ const app = {
         const expenseBatch = this.db.batch();
         expenseSnapshot.forEach((doc) => expenseBatch.delete(doc.ref));
         await expenseBatch.commit();
+
+        await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(session.id).delete();
     },
 
     migrateData() {
@@ -1513,6 +1745,7 @@ const app = {
         if (!active) {
             container.innerHTML = '<p class="empty-message">No session selected</p>';
             if (this.elements.inviteGroup) this.elements.inviteGroup.hidden = true;
+            if (this.elements.memberManagementGroup) this.elements.memberManagementGroup.hidden = true;
             return;
         }
 
@@ -1521,6 +1754,9 @@ const app = {
         }
         if (this.elements.inviteGroup) {
             this.elements.inviteGroup.hidden = !this.currentUser;
+        }
+        if (this.elements.memberManagementGroup) {
+            this.elements.memberManagementGroup.hidden = !this.currentUser;
         }
         if (this.elements.inviteLinkInput) {
             this.elements.inviteLinkInput.value = this.getInviteLinkForActiveSession();
@@ -1550,8 +1786,36 @@ const app = {
                     <p class="stat-value">${memberCount}</p>
                 </div>
             </div>
-            <p class="text-muted text-small">Created: ${this.escape(createdLabel)} • Updated: ${this.escape(updatedLabel)}</p>
+            <p class="text-muted text-small">Created: ${this.escape(createdLabel)}  -  Updated: ${this.escape(updatedLabel)}</p>
         `;
+        if (this.currentUser && this.elements.memberListContainer) {
+            const memberIds = Array.isArray(active.memberIds) ? active.memberIds : [];
+            const isOwner = active.ownerId === this.currentUser.uid;
+
+            this.elements.memberListContainer.innerHTML =
+                memberIds.length === 0
+                    ? '<p class="empty-message">No members found</p>'
+                    : memberIds
+                          .map((uid) => {
+                              const displayName = this.getSessionMemberDisplayName(uid, active);
+                              const isMemberOwner = uid === active.ownerId;
+                              const isSelf = uid === this.currentUser.uid;
+                              const canRename = isOwner || isSelf;
+                              const canRemove = isOwner && !isMemberOwner;
+                              const badges = [isMemberOwner ? 'Host' : null, isSelf ? 'You' : null].filter(Boolean).join(' • ');
+
+                              return `
+                                <div class="list-item">
+                                    <span>${this.escape(displayName)}${badges ? ` <small class="text-muted">(${this.escape(badges)})</small>` : ''}</span>
+                                    <div class="member-actions">
+                                        <button class="btn-edit" data-action="rename-member" data-uid="${this.escape(uid)}" type="button" ${canRename ? '' : 'disabled'}>Rename</button>
+                                        <button class="btn-remove" data-action="remove-member" data-uid="${this.escape(uid)}" type="button" ${canRemove ? '' : 'disabled'}>Remove</button>
+                                    </div>
+                                </div>
+                              `;
+                          })
+                          .join('');
+        }
     },
 
     renderPeople() {
@@ -1565,7 +1829,10 @@ const app = {
                 (person) => `
                     <li class="list-item">
                         <span>${this.escape(person)}</span>
-                        <button class="btn-remove" data-person="${this.escape(person)}" type="button">Remove</button>
+                        <div class="member-actions">
+                            <button class="btn-edit" data-action="rename-person" data-person="${this.escape(person)}" type="button">Rename</button>
+                            <button class="btn-remove" data-action="remove-person" data-person="${this.escape(person)}" type="button">Remove</button>
+                        </div>
                     </li>
                 `
             )
@@ -1663,8 +1930,8 @@ const app = {
                 return `
                     <div class="allocation-item">
                         <div class="allocation-meta">
-                            <div class="allocation-title">${this.escape(conversion.person)} • ${formatMoney(conversion.to.amount, conversion.to.currency)}</div>
-                            <div class="allocation-subtitle">${this.escape(remainingLabel)} • Cost: ${formatMoney(conversion.lkrCost, BASE_CURRENCY)} • ${this.escape(rateLabel)}</div>
+                            <div class="allocation-title">${this.escape(conversion.person)}  -  ${formatMoney(conversion.to.amount, conversion.to.currency)}</div>
+                            <div class="allocation-subtitle">${this.escape(remainingLabel)}  -  Cost: ${formatMoney(conversion.lkrCost, BASE_CURRENCY)}  -  ${this.escape(rateLabel)}</div>
                         </div>
                         <input
                             type="number"
@@ -1737,7 +2004,7 @@ const app = {
             if (Number.isFinite(originalAmount) && originalAmount > 0 && Number.isFinite(rate) && rate > 0) {
                 const base = roundMoney(originalAmount * rate);
                 this.elements.fxBasePreview.textContent = formatMoney(base, BASE_CURRENCY);
-                this.elements.fxRatePreview.textContent = ` • ${roundMoney(rate)} LKR/${currency}`;
+                this.elements.fxRatePreview.textContent = `  -  ${roundMoney(rate)} LKR/${currency}`;
             } else {
                 this.elements.fxBasePreview.textContent = formatMoney(0, BASE_CURRENCY);
                 this.elements.fxRatePreview.textContent = '';
@@ -1772,10 +2039,10 @@ const app = {
             const base = roundMoney(cost);
             const effectiveRate = base / originalAmount;
             this.elements.fxBasePreview.textContent = formatMoney(base, BASE_CURRENCY);
-            this.elements.fxRatePreview.textContent = ` • ${roundMoney(effectiveRate)} LKR/${currency}`;
+            this.elements.fxRatePreview.textContent = `  -  ${roundMoney(effectiveRate)} LKR/${currency}`;
         } else {
             this.elements.fxBasePreview.textContent = formatMoney(0, BASE_CURRENCY);
-            this.elements.fxRatePreview.textContent = sources.length > 0 ? ' • Allocations must match the amount' : '';
+            this.elements.fxRatePreview.textContent = sources.length > 0 ? '  -  Allocations must match the amount' : '';
         }
     },
 
@@ -1800,7 +2067,7 @@ const app = {
             const effectiveRate = Number.isFinite(toAmount) && toAmount > 0 ? baseCost / toAmount : null;
             this.elements.conversionCostPreview.textContent = formatMoney(baseCost, BASE_CURRENCY);
             this.elements.conversionRatePreview.textContent =
-                effectiveRate !== null && Number.isFinite(effectiveRate) ? ` • ${roundMoney(effectiveRate)} LKR/${toCurrency}` : '';
+                effectiveRate !== null && Number.isFinite(effectiveRate) ? `  -  ${roundMoney(effectiveRate)} LKR/${toCurrency}` : '';
             this.conversionAllocationsContextKey = null;
             return;
         }
@@ -1816,7 +2083,7 @@ const app = {
 
             this.elements.conversionCostPreview.textContent = formatMoney(baseCost, BASE_CURRENCY);
             this.elements.conversionRatePreview.textContent =
-                effectiveRate !== null && Number.isFinite(effectiveRate) ? ` • ${roundMoney(effectiveRate)} LKR/${toCurrency}` : '';
+                effectiveRate !== null && Number.isFinite(effectiveRate) ? `  -  ${roundMoney(effectiveRate)} LKR/${toCurrency}` : '';
             return;
         }
 
@@ -1839,10 +2106,10 @@ const app = {
             const effectiveRate = Number.isFinite(toAmount) && toAmount > 0 ? baseCost / toAmount : null;
             this.elements.conversionCostPreview.textContent = formatMoney(baseCost, BASE_CURRENCY);
             this.elements.conversionRatePreview.textContent =
-                effectiveRate !== null && Number.isFinite(effectiveRate) ? ` • ${roundMoney(effectiveRate)} LKR/${toCurrency}` : '';
+                effectiveRate !== null && Number.isFinite(effectiveRate) ? `  -  ${roundMoney(effectiveRate)} LKR/${toCurrency}` : '';
         } else {
             this.elements.conversionCostPreview.textContent = formatMoney(0, BASE_CURRENCY);
-            this.elements.conversionRatePreview.textContent = sources.length > 0 ? ' • Allocations must match the from amount' : '';
+            this.elements.conversionRatePreview.textContent = sources.length > 0 ? '  -  Allocations must match the from amount' : '';
         }
     },
 
@@ -1989,7 +2256,7 @@ const app = {
 
         return `
             <div>${formatMoney(base, BASE_CURRENCY)}</div>
-            <div class="text-muted text-small">${formatMoney(original.amount, original.currency)} • ${this.escape(rateLabel)}</div>
+            <div class="text-muted text-small">${formatMoney(original.amount, original.currency)}  -  ${this.escape(rateLabel)}</div>
             ${details}
         `;
     },
@@ -2013,7 +2280,7 @@ const app = {
                     const label = `${formatMoney(source.amount, conversion.to.currency)} from ${formatMoney(
                         conversion.from.amount,
                         conversion.from.currency
-                    )} → ${formatMoney(conversion.to.amount, conversion.to.currency)}${rateLabel}`;
+                    )} -> ${formatMoney(conversion.to.amount, conversion.to.currency)}${rateLabel}`;
                     return `<li>${this.escape(label)}</li>`;
                 }
                 return null;
@@ -2242,7 +2509,9 @@ document.addEventListener('DOMContentLoaded', () => {
             await app.deleteActiveSession();
         } catch (error) {
             console.error('Failed to delete session:', error);
-            alert('Failed to delete session.');
+            const code = error?.code ? ` (${error.code})` : '';
+            const message = error?.message ? `\n${error.message}` : '';
+            alert(`Failed to delete session${code}.${message}`);
         }
         showPage('sessions');
     });
@@ -2317,9 +2586,42 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     app.elements.peopleList.addEventListener('click', (event) => {
-        const button = event.target.closest('.btn-remove');
-        if (!button) return;
-        app.removePerson(button.getAttribute('data-person'));
+        const actionButton = event.target.closest('[data-action]');
+        if (!actionButton) return;
+
+        const action = actionButton.getAttribute('data-action');
+        const person = actionButton.getAttribute('data-person');
+        if (!person) return;
+
+        if (action === 'rename-person') {
+            app.renamePerson(person);
+            return;
+        }
+        if (action === 'remove-person') {
+            app.removePerson(person);
+        }
+    });
+
+    app.elements.memberListContainer?.addEventListener('click', async (event) => {
+        const actionButton = event.target.closest('[data-action]');
+        if (!actionButton) return;
+
+        const action = actionButton.getAttribute('data-action');
+        const uid = actionButton.getAttribute('data-uid');
+        if (!uid) return;
+
+        try {
+            if (action === 'rename-member') {
+                await app.renameSessionMember(uid);
+                return;
+            }
+            if (action === 'remove-member') {
+                await app.removeSessionMember(uid);
+            }
+        } catch (error) {
+            console.error('Session member action failed:', error);
+            alert(error?.message || 'Member action failed.');
+        }
     });
 
     app.elements.expenseListContainer.addEventListener('click', (event) => {
@@ -2640,7 +2942,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (!confirm(`Delete conversion: ${conversion.person} ${formatMoney(conversion.from.amount, conversion.from.currency)} → ${formatMoney(conversion.to.amount, conversion.to.currency)}?`)) {
+        if (!confirm(`Delete conversion: ${conversion.person} ${formatMoney(conversion.from.amount, conversion.from.currency)} -> ${formatMoney(conversion.to.amount, conversion.to.currency)}?`)) {
             return;
         }
 
@@ -2688,3 +2990,4 @@ document.addEventListener('DOMContentLoaded', () => {
     app.render();
     showPage('home');
 });
+
