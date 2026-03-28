@@ -32,7 +32,10 @@ if ('serviceWorker' in navigator) {
 }
 
 const STORAGE_KEYS = {
+    sessions: 'ganan_sessions',
     activeSessionId: 'ganan_activeSessionId',
+    localActiveSessionId: 'ganan_local_activeSessionId',
+    remoteActiveSessionId: 'ganan_remote_activeSessionId',
     legacyPeople: 'ganan_people',
     legacyExpenses: 'ganan_expenses',
     legacyConversions: 'ganan_conversions',
@@ -143,6 +146,7 @@ const app = {
     activeSessionUnsubscribe: null,
     pendingSaveTimer: null,
     joiningSessionId: null,
+    uploadingLocalSessions: false,
     loadingFromRemote: false,
     latestSessionPayloadSignature: '',
     sessions: [],
@@ -229,10 +233,12 @@ const app = {
             loginBtn: document.getElementById('loginBtn'),
             signupBtn: document.getElementById('signupBtn'),
             googleLoginBtn: document.getElementById('googleLoginBtn'),
+            uploadLocalSessionsBtn: document.getElementById('uploadLocalSessionsBtn'),
             logoutBtn: document.getElementById('logoutBtn'),
             inviteGroup: document.getElementById('inviteGroup'),
             inviteLinkInput: document.getElementById('inviteLinkInput'),
-            copyInviteBtn: document.getElementById('copyInviteBtn')
+            copyInviteBtn: document.getElementById('copyInviteBtn'),
+            storageModeBadge: document.getElementById('storageModeBadge')
         };
     },
 
@@ -475,7 +481,99 @@ const app = {
     save() {
         if (this.loadingFromRemote) return;
         this.persistActiveSessionToMemory();
-        this.queueRemoteSave();
+        if (this.currentUser) {
+            this.writeActiveSessionId(this.activeSessionId, 'remote');
+            this.queueRemoteSave();
+            return;
+        }
+        this.saveLocalState();
+    },
+
+    getActiveSessionStorageKey(scope = this.currentUser ? 'remote' : 'local') {
+        return scope === 'remote' ? STORAGE_KEYS.remoteActiveSessionId : STORAGE_KEYS.localActiveSessionId;
+    },
+
+    readActiveSessionId(scope = this.currentUser ? 'remote' : 'local') {
+        const scopedKey = this.getActiveSessionStorageKey(scope);
+        const scopedValue = localStorage.getItem(scopedKey);
+        if (scopedValue) return scopedValue;
+
+        if (scope === 'local') {
+            const legacyValue = localStorage.getItem(STORAGE_KEYS.activeSessionId);
+            if (legacyValue) {
+                localStorage.setItem(scopedKey, legacyValue);
+                return legacyValue;
+            }
+        }
+
+        return null;
+    },
+
+    writeActiveSessionId(value, scope = this.currentUser ? 'remote' : 'local') {
+        const cleanValue = String(value || '');
+        const scopedKey = this.getActiveSessionStorageKey(scope);
+        localStorage.setItem(scopedKey, cleanValue);
+        if (scope === 'local') {
+            localStorage.setItem(STORAGE_KEYS.activeSessionId, cleanValue);
+        }
+    },
+
+    saveLocalState() {
+        try {
+            localStorage.setItem(
+                STORAGE_KEYS.sessions,
+                JSON.stringify({
+                    version: 1,
+                    sessions: this.sessions
+                })
+            );
+            this.writeActiveSessionId(this.activeSessionId, 'local');
+        } catch (error) {
+            console.error('Failed to save local data:', error);
+        }
+    },
+
+    loadLocalState() {
+        try {
+            const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.sessions) || 'null');
+            this.sessions = stored && Array.isArray(stored.sessions) ? stored.sessions : [];
+            this.activeSessionId = this.readActiveSessionId('local');
+        } catch (error) {
+            console.error('Failed to load local sessions:', error);
+            this.sessions = [];
+            this.activeSessionId = null;
+        }
+
+        this.ensureDefaultLocalSession();
+        this.loadActiveSessionData();
+    },
+
+    ensureDefaultLocalSession() {
+        if (!Array.isArray(this.sessions)) this.sessions = [];
+
+        if (this.sessions.length === 0) {
+            const legacy = this.readLegacyData();
+            const now = Date.now();
+            const id = generateId('sess');
+            this.sessions = [
+                {
+                    id,
+                    name: 'Default',
+                    createdAt: now,
+                    updatedAt: now,
+                    data: legacy
+                }
+            ];
+            this.activeSessionId = id;
+            this.saveLocalState();
+            return;
+        }
+
+        const activeExists = this.sessions.some((session) => session.id === this.activeSessionId);
+        if (!this.activeSessionId || !activeExists) {
+            this.activeSessionId = this.sessions[0].id;
+            this.writeActiveSessionId(this.activeSessionId, 'local');
+        }
     },
 
     async initFirebaseAndAuth() {
@@ -509,12 +607,7 @@ const app = {
 
             if (!user) {
                 this.stopSessionSync();
-                this.sessions = [];
-                this.activeSessionId = null;
-                this.people = [];
-                this.expenses = [];
-                this.conversions = [];
-                this.collectorPerson = null;
+                this.loadLocalState();
                 this.render();
                 return;
             }
@@ -536,13 +629,21 @@ const app = {
             authSignedOutView,
             authSignedInView,
             authUserText,
-            inviteGroup
+            inviteGroup,
+            uploadLocalSessionsBtn
         } = this.elements;
 
         const isSignedIn = !!this.currentUser;
         if (authSignedOutView) authSignedOutView.hidden = isSignedIn;
         if (authSignedInView) authSignedInView.hidden = !isSignedIn;
         if (inviteGroup) inviteGroup.hidden = !isSignedIn || !this.activeSessionId;
+        this.updateStorageModeUI();
+
+        if (uploadLocalSessionsBtn) {
+            uploadLocalSessionsBtn.hidden = !isSignedIn;
+            uploadLocalSessionsBtn.disabled = this.uploadingLocalSessions;
+            uploadLocalSessionsBtn.textContent = this.uploadingLocalSessions ? 'Uploading...' : 'Upload Local Sessions';
+        }
 
         if (!this.authReady) {
             if (authStatusText) authStatusText.textContent = 'Loading authentication...';
@@ -556,6 +657,112 @@ const app = {
 
         if (authStatusText) authStatusText.textContent = 'Signed in. Session data is synced with Firestore.';
         if (authUserText) authUserText.textContent = this.currentUser.email || 'Signed in user';
+    },
+
+    updateStorageModeUI() {
+        const badge = this.elements.storageModeBadge;
+        if (!badge) return;
+
+        const isRemote = !!this.currentUser;
+        badge.textContent = isRemote ? 'Synced' : 'Local';
+        badge.classList.toggle('mode-badge-remote', isRemote);
+        badge.classList.toggle('mode-badge-local', !isRemote);
+    },
+
+    getStoredLocalSessions() {
+        try {
+            const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.sessions) || 'null');
+            const sessions = stored && Array.isArray(stored.sessions) ? stored.sessions : [];
+            return sessions.filter((session) => session && typeof session === 'object');
+        } catch {
+            return [];
+        }
+    },
+
+    async uploadLocalSessionsToFirestore() {
+        if (!this.db || !this.currentUser?.uid) {
+            alert('Sign in first to upload local sessions.');
+            return;
+        }
+
+        const localSessions = this.getStoredLocalSessions();
+        if (localSessions.length === 0) {
+            alert('No local sessions found to upload.');
+            return;
+        }
+
+        if (!confirm(`Upload ${localSessions.length} local session(s) to Firebase? Existing synced sessions will stay unchanged.`)) return;
+
+        this.uploadingLocalSessions = true;
+        this.updateAuthUI();
+
+        try {
+            const existingSnapshot = await this.db
+                .collection(FIRESTORE_COLLECTIONS.sessions)
+                .where('memberIds', 'array-contains', this.currentUser.uid)
+                .get();
+
+            const importedLocalIds = new Set();
+            existingSnapshot.forEach((doc) => {
+                const localId = doc.data()?.importedFromLocalId;
+                if (localId) importedLocalIds.add(String(localId));
+            });
+
+            let uploaded = 0;
+            let skipped = 0;
+            let firstUploadedRemoteId = null;
+
+            for (const localSession of localSessions) {
+                const localId = String(localSession.id || '').trim();
+                if (!localId) {
+                    skipped += 1;
+                    continue;
+                }
+                if (importedLocalIds.has(localId)) {
+                    skipped += 1;
+                    continue;
+                }
+
+                const data = localSession.data && typeof localSession.data === 'object' ? localSession.data : {};
+                const safeName = String(localSession.name || '').trim() || `Imported ${uploaded + 1}`;
+                const now = Date.now();
+                const remoteId = generateId('sess');
+                await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(remoteId).set({
+                    name: safeName,
+                    ownerId: this.currentUser.uid,
+                    memberIds: [this.currentUser.uid],
+                    memberProfiles: {},
+                    importedFromLocalId: localId,
+                    importedAt: now,
+                    createdAt: Number(localSession.createdAt) || now,
+                    updatedAt: now,
+                    data: {
+                        people: Array.isArray(data.people) ? data.people : [],
+                        expenses: Array.isArray(data.expenses) ? data.expenses : [],
+                        conversions: Array.isArray(data.conversions) ? data.conversions : [],
+                        smartSettlement: typeof data.smartSettlement === 'boolean' ? data.smartSettlement : true,
+                        collectorPerson: data.collectorPerson || null
+                    }
+                });
+                if (!firstUploadedRemoteId) {
+                    firstUploadedRemoteId = remoteId;
+                }
+                uploaded += 1;
+            }
+
+            if (firstUploadedRemoteId) {
+                this.activeSessionId = firstUploadedRemoteId;
+                this.writeActiveSessionId(firstUploadedRemoteId, 'remote');
+            }
+
+            alert(`Upload complete. Uploaded: ${uploaded}, skipped: ${skipped}.`);
+        } catch (error) {
+            console.error('Failed to upload local sessions:', error);
+            alert('Failed to upload local sessions.');
+        } finally {
+            this.uploadingLocalSessions = false;
+            this.updateAuthUI();
+        }
     },
 
     async ensureUserProfile(user) {
@@ -607,7 +814,7 @@ const app = {
                     this.sessions = nextSessions;
 
                     const inviteSessionId = this.getInviteSessionId();
-                    const savedActiveId = localStorage.getItem(STORAGE_KEYS.activeSessionId);
+                    const savedActiveId = this.readActiveSessionId('remote');
                     const activeExists = (candidate) => candidate && this.sessions.some((session) => session.id === candidate);
                     const nextActiveId = activeExists(this.activeSessionId)
                         ? this.activeSessionId
@@ -621,7 +828,7 @@ const app = {
                         this.activeSessionId = nextActiveId;
                     }
 
-                    localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId || '');
+                    this.writeActiveSessionId(this.activeSessionId, 'remote');
                     this.loadActiveSessionData();
                     this.render();
                 },
@@ -793,24 +1000,25 @@ const app = {
 
     async createDefaultRemoteSession() {
         if (!this.db || !this.currentUser?.uid) return;
-        const legacy = this.readLegacyData();
+        const localSession = this.getActiveSession();
+        const localData = localSession?.data || this.readLegacyData();
         const now = Date.now();
-        const id = generateId('sess');
+        const id = localSession?.id || generateId('sess');
 
         await this.db
             .collection(FIRESTORE_COLLECTIONS.sessions)
             .doc(id)
             .set({
-                name: 'Default',
+                name: localSession?.name || 'Default',
                 ownerId: this.currentUser.uid,
                 memberIds: [this.currentUser.uid],
                 memberProfiles: {},
-                createdAt: now,
+                createdAt: Number(localSession?.createdAt) || now,
                 updatedAt: now,
-                data: legacy
+                data: localData
             });
 
-        localStorage.setItem(STORAGE_KEYS.activeSessionId, id);
+        this.writeActiveSessionId(id, 'remote');
     },
 
     getInviteSessionId() {
@@ -837,7 +1045,7 @@ const app = {
 
             if (memberIds.includes(this.currentUser.uid)) {
                 this.activeSessionId = sessionId;
-                localStorage.setItem(STORAGE_KEYS.activeSessionId, sessionId);
+                this.writeActiveSessionId(sessionId, 'remote');
                 return;
             }
 
@@ -870,7 +1078,7 @@ const app = {
             );
 
             this.activeSessionId = sessionId;
-            localStorage.setItem(STORAGE_KEYS.activeSessionId, sessionId);
+            this.writeActiveSessionId(sessionId, 'remote');
         } catch (error) {
             console.error('Failed to join invited session:', error);
             alert('Failed to join the session.');
@@ -1014,21 +1222,39 @@ const app = {
         if (!this.sessions.some((session) => session.id === nextId)) return;
 
         this.activeSessionId = nextId;
-        localStorage.setItem(STORAGE_KEYS.activeSessionId, this.activeSessionId);
+        this.writeActiveSessionId(this.activeSessionId);
         this.loadActiveSessionData();
         this.render();
     },
 
     async createSession(name) {
-        if (!this.db || !this.currentUser?.uid) {
-            alert('Please sign in first.');
-            return;
-        }
-
         const trimmed = String(name || '').trim();
         const sessionName = trimmed || `Session ${this.sessions.length + 1}`;
         const now = Date.now();
         const id = generateId('sess');
+
+        if (!this.db || !this.currentUser?.uid) {
+            this.persistActiveSessionToMemory();
+            this.sessions.push({
+                id,
+                name: sessionName,
+                createdAt: now,
+                updatedAt: now,
+                data: {
+                    people: [],
+                    expenses: [],
+                    conversions: [],
+                    smartSettlement: true,
+                    collectorPerson: null
+                }
+            });
+
+            this.activeSessionId = id;
+            this.writeActiveSessionId(id, 'local');
+            this.loadActiveSessionData();
+            this.render();
+            return;
+        }
 
         await this.db
             .collection(FIRESTORE_COLLECTIONS.sessions)
@@ -1050,14 +1276,20 @@ const app = {
             });
 
         this.activeSessionId = id;
-        localStorage.setItem(STORAGE_KEYS.activeSessionId, id);
+        this.writeActiveSessionId(id, 'remote');
     },
 
     async renameActiveSession(name) {
         const trimmed = String(name || '').trim();
         if (!trimmed) return;
         const session = this.getActiveSession();
-        if (!session || !this.db) return;
+        if (!session) return;
+        if (!this.db || !this.currentUser?.uid) {
+            session.name = trimmed;
+            session.updatedAt = Date.now();
+            this.render();
+            return;
+        }
         await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(session.id).set({ name: trimmed, updatedAt: Date.now() }, { merge: true });
     },
 
@@ -1068,9 +1300,23 @@ const app = {
         }
 
         const session = this.getActiveSession();
-        if (!session || !this.db) return;
+        if (!session) return;
 
         if (!confirm(`Delete session "${session.name}"? This will remove its people, expenses, and conversions.`)) return;
+
+        if (!this.db || !this.currentUser?.uid) {
+            const currentIndex = this.sessions.findIndex((item) => item.id === session.id);
+            if (currentIndex === -1) return;
+
+            this.sessions.splice(currentIndex, 1);
+
+            const nextSession = this.sessions[currentIndex] || this.sessions[currentIndex - 1] || this.sessions[0] || null;
+            this.activeSessionId = nextSession?.id || null;
+            this.writeActiveSessionId(this.activeSessionId, 'local');
+            this.loadActiveSessionData();
+            this.render();
+            return;
+        }
 
         await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(session.id).delete();
 
@@ -1248,6 +1494,12 @@ const app = {
         const select = this.elements.sessionSelect;
         const container = this.elements.sessionSummaryContainer;
         if (!select || !container) return;
+
+        if (this.elements.sessionMetaText) {
+            this.elements.sessionMetaText.textContent = this.currentUser
+                ? 'Synced mode: you are viewing Firebase sessions. Local sessions stay separate until you upload them.'
+                : 'Local mode: sessions are saved on this device only. Sign in to sync with Firebase.';
+        }
 
         const previousValue = select.value;
         const options = this.sessions
@@ -1926,6 +2178,7 @@ const app = {
 
 document.addEventListener('DOMContentLoaded', () => {
     app.initElements();
+    app.loadLocalState();
     app.initFirebaseAndAuth();
     app.syncSettlementControls();
 
@@ -2021,7 +2274,22 @@ document.addEventListener('DOMContentLoaded', () => {
             await app.loginWithGoogle();
         } catch (error) {
             console.error('Google sign-in failed:', error);
+            if (error?.code === 'auth/unauthorized-domain') {
+                alert(
+                    'This domain is not authorized for Google sign-in. In Firebase Console > Authentication > Settings > Authorized domains, add this host.'
+                );
+                return;
+            }
             alert(error?.message || 'Google sign-in failed');
+        }
+    });
+
+    app.elements.uploadLocalSessionsBtn?.addEventListener('click', async () => {
+        try {
+            await app.uploadLocalSessionsToFirestore();
+        } catch (error) {
+            console.error('Upload local sessions failed:', error);
+            alert(error?.message || 'Upload failed');
         }
     });
 

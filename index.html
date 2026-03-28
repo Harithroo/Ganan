@@ -14,6 +14,7 @@
     <nav class="navbar" aria-label="Primary navigation">
         <div class="nav-brand">
             <button class="nav-btn brand-btn" data-page="home" type="button">Ganan</button>
+            <span id="storageModeBadge" class="mode-badge mode-badge-local" aria-live="polite">Local</span>
         </div>
         <button class="hamburger" id="hamburger" type="button" aria-label="Toggle navigation menu" aria-controls="navMenu" aria-expanded="false">
             <span></span>
@@ -53,6 +54,7 @@
                 </div>
                 <div id="authSignedInView" hidden>
                     <p class="text-small" id="authUserText"></p>
+                    <button id="uploadLocalSessionsBtn" type="button" class="btn-helper">Upload Local Sessions</button>
                     <button id="logoutBtn" type="button" class="btn-helper">Log out</button>
                 </div>
             </div>

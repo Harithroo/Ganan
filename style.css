@@ -109,6 +109,37 @@ select:focus-visible {
     letter-spacing: 0.01em;
 }
 
+.nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.mode-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.mode-badge-local {
+    background: rgba(255, 196, 98, 0.22);
+    color: #fef3c7;
+    border: 1px solid rgba(255, 196, 98, 0.35);
+}
+
+.mode-badge-remote {
+    background: rgba(96, 226, 212, 0.2);
+    color: #d5fff8;
+    border: 1px solid rgba(96, 226, 212, 0.34);
+}
+
 .hamburger {
     display: none;
     flex-direction: column;
@@ -439,6 +470,12 @@ details summary {
 
 .btn-helper:hover {
     background: #263c4a;
+}
+
+#authSignedInView {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .form-actions {
