@@ -1,60 +1,63 @@
-# Ganan - Group Expense Splitter
+# Ganan
 
-A simple, clean web app to split group expenses and calculate fair settlements using a greedy algorithm.
+Ganan is a client-side group expense splitter with session management, optional Firebase sync, and settlement calculation.
 
-## Features
-
-✨ **Add People** - Create a list of group members  
-💰 **Track Expenses** - Record who paid and for whom  
-🔢 **Calculate Balances** - Automatic balance calculation for each person  
-🤝 **Smart Settlements** - Greedy algorithm to minimize transaction count  
-📱 **Responsive Design** - Works on desktop and mobile  
-🚀 **Offline Ready** - Service worker caching for offline access  
-⚡ **Lightweight** - Vanilla JavaScript + Umbrella JS only  
-
-## How It Works
-
-1. **Add People** - Enter names of group members
-2. **Add Expenses** - Record who paid and for whom
-3. **View Balances** - See who owes and who is owed money
-4. **View Settlements** - Get the optimal payment instructions
-
-## Settlement Algorithm
-
-The app uses a greedy algorithm to calculate minimum settlements:
-- Splits all balances into debtors (negative) and creditors (positive)
-- Sorts both lists by amount
-- Matches lowest debtor with lowest creditor iteratively
-- This minimizes the number of transactions needed
+## Highlights
+- Manage multiple sessions (local or cloud-backed)
+- Add and manage people per session
+- Track expenses with payer, beneficiaries, currency, and optional FX handling
+- Track currency conversions and conversion-funded expenses
+- View balances and settlements (optimized or collector mode)
+- Works as a PWA with service worker caching
+- Includes Playwright regression tests and GitHub Actions CI
 
 ## Tech Stack
+- HTML/CSS/JavaScript (no build step)
+- Umbrella JS (DOM helper)
+- Optional Firebase Auth + Firestore sync
+- Playwright for regression testing
 
-- **HTML5** - Structure
-- **CSS3** - Styling with gradients and responsive design
-- **JavaScript** - Vanilla ES6+ for logic
-- **Umbrella JS 3.3.6** - DOM manipulation via CDN
-- **Service Worker** - Offline capability
+## Project Structure
+- `index.html` - App UI
+- `app.js` - App state, calculations, rendering, session/auth logic
+- `style.css` - Styles
+- `sw.js` - Service worker
+- `manifest.json` - PWA metadata
+- `tests/regression/` - Playwright regression tests
+- `.github/workflows/regression-tests.yml` - CI workflow
 
-## File Structure
+## Run the App
+Open `index.html` in a modern browser.
 
+For best behavior with service worker and testing, run with a local static server.
+
+## Regression Testing
+Install:
+```bash
+npm install
+npx playwright install chromium
 ```
-index.html       - Main HTML structure
-app.js           - Core application logic
-style.css        - All styling
-sw.js            - Service worker for offline support
-manifest.json    - PWA manifest for installation
+
+Run tests:
+```bash
+npm run test:regression
 ```
 
-## Usage
+Open interactive runner:
+```bash
+npm run test:regression:ui
+```
 
-Simply open `index.html` in a modern web browser. No build process or backend required.
+## Notes
+- Local mode works without Firebase.
+- Cloud sync features require valid Firebase configuration.
+- Data is session-scoped; local and remote active session IDs are tracked separately.
 
-## Data Storage
-
-All data is stored in memory (JavaScript). Refresh the page to clear all data.  
-To persist data, you can implement localStorage in `app.js`.
-
-## License
-
-Free to use and modify.
-personal project for an app
+## Documentation
+- `QUICKSTART.md` - User workflow and setup
+- `FEATURES.md` - Functional capability list
+- `IMPLEMENTATION.md` - Implementation details
+- `ARCHITECTURE.md` - System architecture and data model
+- `VERIFICATION.md` - Validation and test checklist
+- `COMPLETE.md` - Current delivery status
+- `REFACTOR.md` - UI/navigation refactor notes

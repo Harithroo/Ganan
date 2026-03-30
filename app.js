@@ -782,7 +782,7 @@ const app = {
                 const safeName = String(localSession.name || '').trim() || `Imported ${uploaded + 1}`;
                 const now = Date.now();
                 const remoteId = generateId('sess');
-                await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(remoteId).set({
+                await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(remoteId).set(this.sanitizeForFirestore({
                     name: safeName,
                     ownerId: this.currentUser.uid,
                     memberIds: [this.currentUser.uid],
@@ -798,7 +798,7 @@ const app = {
                         smartSettlement: typeof data.smartSettlement === 'boolean' ? data.smartSettlement : true,
                         collectorPerson: data.collectorPerson || null
                     }
-                });
+                }));
                 if (!firstUploadedRemoteId) {
                     firstUploadedRemoteId = remoteId;
                 }
@@ -909,6 +909,25 @@ const app = {
         }, 250);
     },
 
+    sanitizeForFirestore(value) {
+        if (value === undefined) return undefined;
+        if (value === null) return null;
+        if (Array.isArray(value)) {
+            return value.map((item) => this.sanitizeForFirestore(item));
+        }
+        if (typeof value === 'object') {
+            const output = {};
+            Object.entries(value).forEach(([key, entry]) => {
+                const sanitized = this.sanitizeForFirestore(entry);
+                if (sanitized !== undefined) {
+                    output[key] = sanitized;
+                }
+            });
+            return output;
+        }
+        return value;
+    },
+
     getActiveSessionSignature() {
         return JSON.stringify({
             activeSessionId: this.activeSessionId,
@@ -930,7 +949,7 @@ const app = {
 
         const memberProfiles = session.memberProfiles || {};
         const memberIds = Array.from(new Set([...(Array.isArray(session.memberIds) ? session.memberIds : []), this.currentUser.uid]));
-        const payload = {
+        const payload = this.sanitizeForFirestore({
             name: session.name || 'Session',
             ownerId: session.ownerId || this.currentUser.uid,
             memberIds,
@@ -944,7 +963,7 @@ const app = {
                 smartSettlement: this.smartSettlement,
                 collectorPerson: this.collectorPerson
             }
-        };
+        });
 
         await this.db.collection(FIRESTORE_COLLECTIONS.sessions).doc(this.activeSessionId).set(payload, { merge: true });
         await this.syncSessionScopedCollections(this.activeSessionId, payload.data, memberProfiles);
@@ -997,11 +1016,11 @@ const app = {
             desiredExpenseIds.add(expense.id);
             expenseBatch.set(
                 this.db.collection(FIRESTORE_COLLECTIONS.expenses).doc(expense.id),
-                {
+                this.sanitizeForFirestore({
                     ...expense,
                     sessionId,
                     updatedAt: Date.now()
-                },
+                }),
                 { merge: true }
             );
         });
@@ -1063,7 +1082,7 @@ const app = {
         await this.db
             .collection(FIRESTORE_COLLECTIONS.sessions)
             .doc(id)
-            .set({
+            .set(this.sanitizeForFirestore({
                 name: localSession?.name || 'Default',
                 ownerId: this.currentUser.uid,
                 memberIds: [this.currentUser.uid],
@@ -1071,7 +1090,7 @@ const app = {
                 createdAt: Number(localSession?.createdAt) || now,
                 updatedAt: now,
                 data: localData
-            });
+            }));
 
         this.writeActiveSessionId(id, 'remote');
     },
@@ -1491,7 +1510,7 @@ const app = {
         await this.db
             .collection(FIRESTORE_COLLECTIONS.sessions)
             .doc(id)
-            .set({
+            .set(this.sanitizeForFirestore({
                 name: sessionName,
                 ownerId: this.currentUser.uid,
                 memberIds: [this.currentUser.uid],
@@ -1505,7 +1524,7 @@ const app = {
                     smartSettlement: true,
                     collectorPerson: null
                 }
-            });
+            }));
 
         this.activeSessionId = id;
         this.writeActiveSessionId(id, 'remote');
