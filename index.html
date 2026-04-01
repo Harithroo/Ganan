@@ -358,6 +358,24 @@
         <option value="INR"></option>
     </datalist>
 
+    <div id="invitePersonModal" class="modal-backdrop" hidden aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="invitePersonModalTitle">
+            <h3 id="invitePersonModalTitle">Join Session As</h3>
+            <p class="text-muted text-small">Select an existing person or enter a new name.</p>
+            <form id="invitePersonForm">
+                <div class="modal-list" id="invitePersonExistingList"></div>
+                <div class="form-group">
+                    <label for="invitePersonNewNameInput">Or create new person:</label>
+                    <input type="text" id="invitePersonNewNameInput" autocomplete="off" placeholder="Enter name">
+                </div>
+                <div class="form-actions modal-actions">
+                    <button type="button" id="invitePersonCancelBtn" class="btn-cancel">Cancel</button>
+                    <button type="submit" id="invitePersonConfirmBtn" class="btn-primary">Join Session</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>

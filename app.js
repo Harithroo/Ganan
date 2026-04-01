@@ -160,6 +160,8 @@ const app = {
     collectorPerson: null,
     fxAllocationsContextKey: null,
     conversionAllocationsContextKey: null,
+    invitePersonModalResolver: null,
+    invitePersonModalPreviousFocus: null,
 
     elements: {},
 
@@ -240,7 +242,12 @@ const app = {
             inviteGroup: document.getElementById('inviteGroup'),
             inviteLinkInput: document.getElementById('inviteLinkInput'),
             copyInviteBtn: document.getElementById('copyInviteBtn'),
-            storageModeBadge: document.getElementById('storageModeBadge')
+            storageModeBadge: document.getElementById('storageModeBadge'),
+            invitePersonModal: document.getElementById('invitePersonModal'),
+            invitePersonForm: document.getElementById('invitePersonForm'),
+            invitePersonExistingList: document.getElementById('invitePersonExistingList'),
+            invitePersonNewNameInput: document.getElementById('invitePersonNewNameInput'),
+            invitePersonCancelBtn: document.getElementById('invitePersonCancelBtn')
         };
     },
 
@@ -280,17 +287,26 @@ const app = {
         this.render();
     },
 
-    renamePersonReferences(oldName, newName) {
+    renamePersonReferences(oldName, newName, { allowMerge = false } = {}) {
         const previous = String(oldName || '').trim();
         const next = String(newName || '').trim();
         if (!previous || !next || previous === next) return false;
-        if (!this.people.includes(previous) || this.people.includes(next)) return false;
+        if (!this.people.includes(previous)) return false;
 
-        this.people = this.people.map((person) => (person === previous ? next : person));
+        const targetExists = this.people.includes(next);
+        if (targetExists && !allowMerge) return false;
+
+        if (targetExists) {
+            this.people = this.people.filter((person) => person !== previous);
+        } else {
+            this.people = this.people.map((person) => (person === previous ? next : person));
+        }
         this.expenses = this.expenses.map((expense) => ({
             ...expense,
             payer: expense.payer === previous ? next : expense.payer,
-            for: Array.isArray(expense.for) ? expense.for.map((beneficiary) => (beneficiary === previous ? next : beneficiary)) : []
+            for: Array.isArray(expense.for)
+                ? Array.from(new Set(expense.for.map((beneficiary) => (beneficiary === previous ? next : beneficiary))))
+                : []
         }));
         this.conversions = this.conversions.map((conversion) => ({
             ...conversion,
@@ -311,12 +327,13 @@ const app = {
         const response = prompt('Enter the new name:', current);
         const next = String(response || '').trim();
         if (!next || next === current) return;
-        if (this.people.includes(next)) {
-            alert(`"${next}" already exists.`);
+
+        const shouldMerge = this.people.includes(next);
+        if (shouldMerge && !confirm(`"${next}" already exists. Merge "${current}" into "${next}"? This cannot be undone.`)) {
             return;
         }
 
-        const renamed = this.renamePersonReferences(current, next);
+        const renamed = this.renamePersonReferences(current, next, { allowMerge: shouldMerge });
         if (!renamed) return;
 
         const session = this.getActiveSession();
@@ -1138,11 +1155,9 @@ const app = {
 
             const sessionData = session.data && typeof session.data === 'object' ? session.data : {};
             const sessionPeople = Array.isArray(sessionData.people) ? sessionData.people.map((name) => String(name).trim()).filter(Boolean) : [];
-            const fallbackMemberName = this.getInviteMemberName(sessionPeople);
-
-            const linkedPerson = this.promptForPersonLink(sessionPeople) || fallbackMemberName;
+            const linkedPerson = await this.resolveInviteLinkedPerson(sessionPeople);
             if (!linkedPerson) {
-                alert('Joining cancelled. Could not determine a member name for this account.');
+                alert('Joining cancelled. Please choose or enter a member name to continue.');
                 return;
             }
 
@@ -1198,6 +1213,13 @@ const app = {
         return `Member ${index}`;
     },
 
+    async resolveInviteLinkedPerson(existingPeople) {
+        const cleanPeople = Array.isArray(existingPeople) ? existingPeople.map((name) => String(name).trim()).filter(Boolean) : [];
+        const fallbackMemberName = this.getInviteMemberName(cleanPeople);
+        if (cleanPeople.length === 0) return fallbackMemberName;
+        return await this.promptForPersonLink(cleanPeople, fallbackMemberName);
+    },
+
     getActiveSessionDataPayload() {
         return {
             people: this.people,
@@ -1238,8 +1260,8 @@ const app = {
         const nextName = String(response || '').trim();
         if (!nextName || nextName === previousName) return;
 
-        if (this.people.includes(nextName) && !this.people.includes(previousName)) {
-            alert(`"${nextName}" already exists.`);
+        const shouldMerge = this.people.includes(nextName);
+        if (shouldMerge && !confirm(`"${nextName}" already exists. Merge "${previousName}" into "${nextName}"? This cannot be undone.`)) {
             return;
         }
 
@@ -1249,9 +1271,9 @@ const app = {
         updatedProfiles[memberUid] = nextName;
 
         if (this.people.includes(previousName) && previousName !== nextName) {
-            const renamed = this.renamePersonReferences(previousName, nextName);
+            const renamed = this.renamePersonReferences(previousName, nextName, { allowMerge: shouldMerge });
             if (!renamed) {
-                alert('Could not rename this member because that target name already exists.');
+                alert('Could not rename this member.');
                 return;
             }
         } else if (!this.people.includes(nextName)) {
@@ -1323,20 +1345,96 @@ const app = {
         alert(`Removed "${memberName}" from the session.`);
     },
 
-    promptForPersonLink(existingPeople) {
+    async promptForPersonLink(existingPeople, suggestedName = '') {
         const cleanPeople = Array.isArray(existingPeople) ? existingPeople.filter(Boolean) : [];
         if (cleanPeople.length === 0) return null;
 
-        const list = cleanPeople.map((name, index) => `${index + 1}. ${name}`).join('\n');
-        const response = prompt(`Join as which person?\n${list}\n\nType a number from the list, or type a new name to create another person:`, cleanPeople[0]);
-        const trimmed = String(response || '').trim();
+        const modal = this.elements.invitePersonModal;
+        const form = this.elements.invitePersonForm;
+        const existingList = this.elements.invitePersonExistingList;
+        const newNameInput = this.elements.invitePersonNewNameInput;
+
+        if (!modal || !form || !existingList || !newNameInput) {
+            const list = cleanPeople.map((name, index) => `${index + 1}. ${name}`).join('\n');
+            const response = prompt(`Join as which person?\n${list}\n\nType a number from the list, or type a new name to create another person:`, '');
+            const trimmedFallback = String(response || '').trim();
+            if (!trimmedFallback) return null;
+
+            const index = Number(trimmedFallback);
+            if (Number.isFinite(index) && index >= 1 && index <= cleanPeople.length) {
+                return cleanPeople[index - 1];
+            }
+
+            const matchedFallback = cleanPeople.find((name) => name.localeCompare(trimmedFallback, undefined, { sensitivity: 'accent' }) === 0);
+            return matchedFallback || trimmedFallback;
+        }
+
+        if (this.invitePersonModalResolver) {
+            this.closeInvitePersonModal(null);
+        }
+
+        existingList.innerHTML = cleanPeople
+            .map(
+                (name) => `
+                    <label class="modal-option">
+                        <input type="radio" name="invitePersonExisting" value="${this.escape(name)}">
+                        <span>${this.escape(name)}</span>
+                    </label>
+                `
+            )
+            .join('');
+
+        newNameInput.value = '';
+        const cleanSuggested = String(suggestedName || '').trim();
+        newNameInput.placeholder = cleanSuggested ? `${cleanSuggested} (suggested)` : 'Enter name';
+        this.invitePersonModalPreviousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        newNameInput.focus();
+
+        const rawChoice = await new Promise((resolve) => {
+            this.invitePersonModalResolver = resolve;
+        });
+        const trimmed = String(rawChoice || '').trim();
         if (!trimmed) return null;
 
-        const index = Number(trimmed);
-        if (Number.isFinite(index) && index >= 1 && index <= cleanPeople.length) {
-            return cleanPeople[index - 1];
+        const matchedExisting = cleanPeople.find((name) => name.localeCompare(trimmed, undefined, { sensitivity: 'accent' }) === 0);
+        return matchedExisting || trimmed;
+    },
+
+    closeInvitePersonModal(defaultChoice = null) {
+        const modal = this.elements.invitePersonModal;
+        const resolver = this.invitePersonModalResolver;
+        this.invitePersonModalResolver = null;
+
+        if (modal) {
+            modal.hidden = true;
+            modal.setAttribute('aria-hidden', 'true');
         }
-        return trimmed;
+
+        if (this.invitePersonModalPreviousFocus) {
+            this.invitePersonModalPreviousFocus.focus();
+            this.invitePersonModalPreviousFocus = null;
+        }
+
+        if (resolver) {
+            resolver(defaultChoice);
+        }
+    },
+
+    submitInvitePersonModal() {
+        const form = this.elements.invitePersonForm;
+        const newNameInput = this.elements.invitePersonNewNameInput;
+        if (!form || !newNameInput || !this.invitePersonModalResolver) return;
+
+        const typed = String(newNameInput.value || '').trim();
+        const selected = form.querySelector('input[name="invitePersonExisting"]:checked');
+        if (!typed && !selected) {
+            alert('Select an existing person or enter a new name.');
+            return;
+        }
+
+        this.closeInvitePersonModal(typed || String(selected.value || '').trim());
     },
 
     getInviteLinkForActiveSession() {
@@ -1995,8 +2093,11 @@ const app = {
     },
 
     refreshExpenseFxUI() {
-        const currency = normalizeCurrency(this.elements.expenseCurrencyInput.value);
-        this.elements.expenseCurrencyInput.value = currency;
+        const rawCurrency = String(this.elements.expenseCurrencyInput.value || '').trim().toUpperCase();
+        if (rawCurrency) {
+            this.elements.expenseCurrencyInput.value = rawCurrency;
+        }
+        const currency = rawCurrency || BASE_CURRENCY;
 
         const isBase = currency === BASE_CURRENCY;
         this.elements.fxGroup.hidden = isBase;
@@ -2067,10 +2168,16 @@ const app = {
 
     refreshConversionFundingUI() {
         const person = this.elements.conversionPersonSelect.value;
-        const fromCurrency = normalizeCurrency(this.elements.conversionFromCurrency.value);
-        const toCurrency = normalizeCurrency(this.elements.conversionToCurrency.value);
-        this.elements.conversionFromCurrency.value = fromCurrency;
-        this.elements.conversionToCurrency.value = toCurrency;
+        const rawFromCurrency = String(this.elements.conversionFromCurrency.value || '').trim().toUpperCase();
+        const rawToCurrency = String(this.elements.conversionToCurrency.value || '').trim().toUpperCase();
+        if (rawFromCurrency) {
+            this.elements.conversionFromCurrency.value = rawFromCurrency;
+        }
+        if (rawToCurrency) {
+            this.elements.conversionToCurrency.value = rawToCurrency;
+        }
+        const fromCurrency = rawFromCurrency || BASE_CURRENCY;
+        const toCurrency = rawToCurrency || BASE_CURRENCY;
 
         const fromAmount = Number.parseFloat(this.elements.conversionFromAmount.value);
         const toAmount = Number.parseFloat(this.elements.conversionToAmount.value);
@@ -2462,6 +2569,10 @@ const app = {
     }
 };
 
+if (typeof window !== 'undefined') {
+    window.__gananApp = app;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     app.initElements();
     app.loadLocalState();
@@ -2539,6 +2650,21 @@ document.addEventListener('DOMContentLoaded', () => {
         app.copyInviteLink();
     });
 
+    app.elements.invitePersonForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        app.submitInvitePersonModal();
+    });
+
+    app.elements.invitePersonCancelBtn?.addEventListener('click', () => {
+        app.closeInvitePersonModal(null);
+    });
+
+    app.elements.invitePersonModal?.addEventListener('click', (event) => {
+        if (event.target === app.elements.invitePersonModal) {
+            app.closeInvitePersonModal(null);
+        }
+    });
+
     app.elements.loginBtn?.addEventListener('click', async () => {
         try {
             await app.loginWithEmail();
@@ -2601,6 +2727,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.key === 'Enter') {
             event.preventDefault();
             app.elements.loginBtn?.click();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && app.invitePersonModalResolver) {
+            app.closeInvitePersonModal(null);
         }
     });
 
